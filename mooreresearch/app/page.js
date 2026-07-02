@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'; // <-- THE CRITICAL NEW LINE
+
 'use client';
 
 import { useEditor, EditorContent } from '@tiptap/react';
@@ -10,7 +12,7 @@ import { RoomProvider, ClientSideSuspense } from '@liveblocks/react/suspense';
 import { useSelf, useOthers } from "@liveblocks/react/suspense";
 import { useEffect, useState } from 'react';
 
-// The child component that contains the actual editor
+// The actual editor component
 function CollaborativeEditor() {
     const [doc, setDoc] = useState(null);
     const [provider, setProvider] = useState(null);
