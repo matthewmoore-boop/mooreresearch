@@ -1,7 +1,7 @@
 'use client'; // This file is now also a client component
 
 import { RoomProvider, ClientSideSuspense } from '@liveblocks/react/suspense';
-import CollaborativeEditor from '../components/Editor'; // Import the new component
+import CollaborativeEditor from './components/Editor'; // Import the new component
 
 function LoadingSpinner() {
   return <div className="p-5">Connecting to the document...</div>;
