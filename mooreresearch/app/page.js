@@ -10,11 +10,11 @@ import { RoomProvider, ClientSideSuspense } from '@liveblocks/react/suspense';
 import { useSelf, useOthers } from "@liveblocks/react/suspense";
 import { useEffect, useState } from 'react';
 
-// The actual editor component
+// The child component that contains the actual editor
 function CollaborativeEditor() {
     const [doc, setDoc] = useState(null);
     const [provider, setProvider] = useState(null);
-    const userInfo = useSelf(me => me.info) || { name: "Anonymous", color: "#000000" };
+    const userInfo = useSelf((me) => me.info);
     const others = useOthers();
 
     const editor = useEditor({
@@ -36,7 +36,7 @@ function CollaborativeEditor() {
                     Collaboration.configure({ document: yDoc }),
                     CollaborationCursor.configure({
                         provider: yProvider,
-                        user: userInfo,
+                        user: userInfo || { name: 'Anonymous', color: '#000000'},
                     }),
                 ],
                 content: yDoc.getXmlFragment('prosemirror'),
@@ -51,14 +51,18 @@ function CollaborativeEditor() {
     return (
         <div className="max-w-4xl mx-auto mt-10 border border-gray-300 rounded-lg shadow-lg">
             <div className="p-2 text-sm text-gray-500">
-                Users online: {others.length + 1}
+                {others.map(({ connectionId, info }) => (
+                    <span key={connectionId} style={{ color: info.color }}>
+                        ● {info.name}
+                    </span>
+                ))}
             </div>
             <EditorContent editor={editor} />
         </div>
     );
 }
 
-// The main page component that provides the Liveblocks context
+// The parent component that provides the Liveblocks context
 export default function Page() {
   return (
     <RoomProvider
@@ -66,8 +70,8 @@ export default function Page() {
       initialPresence={{}}
       authEndpoint="/api/liveblocks-auth"
     >
-      <ClientSideSuspense fallback={<div>Loading editor...</div>}>
-        <CollaborativeEditor />
+      <ClientSideSuspense fallback={<div>Loading...</div>}>
+          <CollaborativeEditor />
       </ClientSideSuspense>
     </RoomProvider>
   );
