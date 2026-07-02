@@ -1,6 +1,5 @@
 import { Inter } from 'next/font/google'
 import './globals.css'
-import { Room } from "./Room"; // Import the new Room provider
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -12,11 +11,7 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
-      <body className={inter.className}>
-        <Room> {/* Wrap the children with the Room provider */}
-          {children}
-        </Room>
-      </body>
+      <body className={inter.className}>{children}</body>
     </html>
   )
 }
