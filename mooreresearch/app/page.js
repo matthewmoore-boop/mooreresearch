@@ -1,9 +1,3 @@
-import { CollaborativeApp } from "./Room";
+import Page from "./Room";
 
-export default function Page() {
-  return (
-    <div>
-      <CollaborativeApp />
-    </div>
-  );
-}
+export default Page;

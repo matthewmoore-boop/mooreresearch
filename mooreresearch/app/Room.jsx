@@ -1,6 +1,6 @@
 "use client";
 
-import { RoomProvider } from "@liveblocks/react/suspense";
+import { RoomProvider, ClientSideSuspense } from "@liveblocks/react/suspense"; // Import ClientSideSuspense
 import { LiveblocksYjsProvider } from "@liveblocks/yjs";
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
@@ -10,6 +10,10 @@ import * as Y from "yjs";
 import { useEffect, useState } from "react";
 import { useOthers, useSelf } from "@liveblocks/react/suspense";
 
+// A loading spinner to show while the collaborative editor is connecting
+function LoadingSpinner() {
+    return <div className="p-5">Connecting to the document...</div>;
+}
 
 function Editor() {
   const [doc, setDoc] = useState(null);
@@ -49,29 +53,37 @@ function Editor() {
   return <EditorContent editor={editor} />;
 }
 
+export function CollaborativeApp() {
+    // This component uses Liveblocks hooks, so it must be wrapped
+    const others = useOthers();
+    const userCount = others.length + 1;
 
-function Room({ children }) {
+    return (
+        <div className="max-w-4xl mx-auto mt-10 border border-gray-300 rounded-lg shadow-lg">
+           <div className="p-2 text-sm text-gray-500">
+               Users online: {userCount}
+           </div>
+           <Editor />
+       </div>
+    )
+}
+
+export default function Page() {
+  const roomId = "apex-research-demo-room";
+
   return (
-    <RoomProvider id="apex-research-demo-room"
+    <RoomProvider
+      id={roomId}
       initialPresence={{}}
       authEndpoint="/api/liveblocks-auth"
     >
-        {children}
+      {/*
+        Use ClientSideSuspense to only render the collaborative components
+        on the client side. This will avoid the server-side rendering error.
+      */}
+      <ClientSideSuspense fallback={<LoadingSpinner />}>
+          <CollaborativeApp />
+      </ClientSideSuspense>
     </RoomProvider>
   );
-}
-
-export function CollaborativeApp() {
-    const others = useOthers();
-    const userCount = others.length + 1;
-    return (
-        <Room>
-             <div className="max-w-4xl mx-auto mt-10 border border-gray-300 rounded-lg shadow-lg">
-                <div className="p-2 text-sm text-gray-500">
-                    Users online: {userCount}
-                </div>
-                <Editor />
-            </div>
-        </Room>
-    )
 }
