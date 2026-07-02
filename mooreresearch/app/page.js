@@ -1,6 +1,8 @@
+'use client';
+
 export const dynamic = 'force-dynamic'; // <-- THE CRITICAL NEW LINE
 
-'use client';
+
 
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
