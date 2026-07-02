@@ -9,6 +9,8 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@liveblocks/client": "^3.21.0",
+    "@liveblocks/react": "^3.21.0",
     "@supabase/supabase-js": "^2.110.0",
     "@tiptap/pm": "^3.27.1",
     "@tiptap/react": "^3.27.1",

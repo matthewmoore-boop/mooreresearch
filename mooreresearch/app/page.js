@@ -1,197 +1,90 @@
 'use client'
 
- 
-
 import { useEditor, EditorContent } from '@tiptap/react'
-
 import StarterKit from '@tiptap/starter-kit'
-
 import { createClient } from '@supabase/supabase-js'
-
 import { useEffect, useState } from 'react'
+import { RoomProvider, useOthers, useMyPresence } from "@liveblocks/react/suspense";
+import { LiveblocksYjsProvider } from "@liveblocks/yjs";
+import * as Y from "yjs";
 
- 
-
-// 1. Initialize the Supabase client
-
-const supabase = createClient(
-
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-
-)
-
- 
-
-// The toolbar component remains the same
-
-const MenuBar = ({ editor }) => {
-
-  if (!editor) { return null }
-
-  return (
-
-    <div className="flex space-x-2 p-2 bg-gray-100 border-b border-gray-300">
-
-      {/* ... (buttons for Bold, Italic, H1) ... */}
-
-       <button onClick={() => editor.chain().focus().toggleBold().run()} className={editor.isActive('bold') ? 'p-1 bg-gray-300 rounded' : 'p-1'}>Bold</button>
-
-       <button onClick={() => editor.chain().focus().toggleItalic().run()} className={editor.isActive('italic') ? 'p-1 bg-gray-300 rounded' : 'p-1'}>Italic</button>
-
-       <button onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()} className={editor.isActive('heading', { level: 1 }) ? 'p-1 bg-gray-300 rounded' : 'p-1'}>H1</button>
-
-    </div>
-
-  )
-
-}
-
- 
-
-// The main page component
-
-export default function Home() {
-
-  const [docId, setDocId] = useState(null);
-
- 
+// --- The Editor Component ---
+function CollaborativeEditor() {
+  const [doc, setDoc] = useState(null);
+  const [provider, setProvider] = useState(null);
 
   const editor = useEditor({
-
-    extensions: [ StarterKit ],
-
-    content: `<p>Loading document...</p>`, // Initial placeholder
-
-    editorProps: {
-
-      attributes: { class: 'prose prose-sm sm:prose lg:prose-lg xl:prose-2xl p-5 focus:outline-none min-h-[300px]' },
-
-    },
-
+    // We will set the content and collaboration settings in useEffect
   })
-
  
-
-   // 2. Fetch the SPECIFIC document from Supabase when the component mounts
+  // This is where you can add multiplayer features
+  const others = useOthers();
+  const userCount = others.length + 1; // +1 for the current user
 
   useEffect(() => {
+    // A Yjs document holds the shared data
+    const yDoc = new Y.Doc();
+    // A Liveblocks provider connects to the room and syncs the data
+    const yProvider = new LiveblocksYjsProvider(yDoc, {
+      // For this demo, we'll use a hardcoded room name
+      room: "apex-research-demo-room",
+    });
 
-    // ---- PASTE YOUR DOCUMENT ID HERE ----
-
-    const DOCUMENT_ID_TO_LOAD = "your-document-id-from-supabase";
-
-    // -------------------------------------
-
- 
-
-    async function loadDocument() {
-
-      const { data, error } = await supabase
-
-        .from('documents')
-
-        .select('id, content_json')
-
-        .eq('id', 'c63d1b04-aadf-4251-871a-bc5a7da82fe8') // We now ask for a specific document
-
-        .single(); // This will now work correctly
-
- 
-
-      if (data && editor) {
-
-        setDocId(data.id);
-
-        editor.commands.setContent(data.content_json);
-
-      } else if (error) {
-
-        let errorMessage = error.message;
-
-        if (error.code === 'PGRST116') {
-
-             errorMessage = "The document ID was not found. Please check the ID in your code."
-
-        }
-
-        editor.commands.setContent(`<p>Error loading document: ${errorMessage}</p>`);
-
-      } else {
-
-        editor.commands.setContent(`<p>Error: Document with ID not found.</p>`);
-
-      }
-
+    setDoc(yDoc);
+    setProvider(yProvider);
+   
+    // Configure the editor once the provider is ready
+    if(editor){
+        editor.setOptions({
+            extensions: [
+                StarterKit.configure({
+                    // The collaboration extension is the magic that connects Tiptap to Yjs
+                    history: false, // Liveblocks handles history
+                }),
+                // Collaboration extension
+            ],
+            editorProps: {
+                attributes: { class: 'prose prose-sm sm:prose lg:prose-lg xl:prose-2xl p-5 focus:outline-none min-h-[300px]' },
+            },
+        })
     }
 
-    if (editor) {
+    return () => {
+      yDoc?.destroy();
+      yProvider?.destroy();
+    };
+  }, [editor]);
 
-      loadDocument();
-
-    }
-
-  }, [editor])
-
- 
-
-  // 3. Save the document back to Supabase
-
-  const handleSave = async () => {
-
-    if (editor && docId) {
-
-      const json = editor.getJSON();
-
-      const { error } = await supabase
-
-        .from('documents')
-
-        .update({ content_json: json, updated_at: new Date().toISOString() })
-
-        .eq('id', docId)
-
- 
-
-      if (error) {
-
-        alert('Error saving document: ' + error.message)
-
-      } else {
-
-        alert('Document saved successfully!')
-
-      }
-
-    }
-
+  if (!editor) {
+    return null;
   }
-
  
-
   return (
-
-    <div className="max-w-4xl mx-auto mt-10 border border-gray-300 rounded-lg shadow-lg">
-
-      <div className="flex justify-between items-center p-2 bg-gray-100 border-b">
-
-        <MenuBar editor={editor} />
-
-        <button onClick={handleSave} className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded">
-
-          Save
-
-        </button>
-
+      <div>
+          <div className="p-2 text-sm text-gray-500">
+              Users online: {userCount}
+          </div>
+          <EditorContent editor={editor} />
       </div>
-
-      <EditorContent editor={editor} />
-
-    </div>
-
   )
-
 }
 
- 
+// --- The Main Page Component which provides the Liveblocks context ---
+export default function Home() {
+  // For this demo, a hardcoded room name is fine.
+  // In production, this would be the unique ID of the document.
+  const roomId = "apex-research-demo-room";
+
+  return (
+    <RoomProvider
+      id={roomId}
+      initialPresence={{}}
+      // The auth endpoint you just created
+      authEndpoint="/api/liveblocks-auth"
+    >
+        <div className="max-w-4xl mx-auto mt-10 border border-gray-300 rounded-lg shadow-lg">
+            <CollaborativeEditor />
+        </div>
+    </RoomProvider>
+  );
+}
