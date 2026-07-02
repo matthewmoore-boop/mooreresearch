@@ -10,8 +10,11 @@
   },
   "dependencies": {
     "@liveblocks/client": "^3.21.0",
+    "@liveblocks/node": "^3.21.0",
     "@liveblocks/react": "^3.21.0",
     "@supabase/supabase-js": "^2.110.0",
+    "@tiptap/extension-collaboration": "^3.27.1",
+    "@tiptap/extension-collaboration-cursor": "^2.26.2",
     "@tiptap/pm": "^3.27.1",
     "@tiptap/react": "^3.27.1",
     "@tiptap/starter-kit": "^3.27.1",
