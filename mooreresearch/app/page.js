@@ -74,13 +74,19 @@ export default function Home() {
 
  
 
-  // 2. Fetch the document from Supabase when the component mounts
+   // 2. Fetch the SPECIFIC document from Supabase when the component mounts
 
   useEffect(() => {
 
-    async function loadDocument() {
+    // ---- PASTE YOUR DOCUMENT ID HERE ----
 
-      // For this demo, we'll just grab the very first document.
+    const DOCUMENT_ID_TO_LOAD = "your-document-id-from-supabase";
+
+    // -------------------------------------
+
+ 
+
+    async function loadDocument() {
 
       const { data, error } = await supabase
 
@@ -88,9 +94,9 @@ export default function Home() {
 
         .select('id, content_json')
 
-        .limit(1)
+        .eq('id', 'c63d1b04-aadf-4251-871a-bc5a7da82fe8') // We now ask for a specific document
 
-        .single()
+        .single(); // This will now work correctly
 
  
 
@@ -102,7 +108,19 @@ export default function Home() {
 
       } else if (error) {
 
-        editor.commands.setContent(`<p>Error loading document: ${error.message}</p>`);
+        let errorMessage = error.message;
+
+        if (error.code === 'PGRST116') {
+
+             errorMessage = "The document ID was not found. Please check the ID in your code."
+
+        }
+
+        editor.commands.setContent(`<p>Error loading document: ${errorMessage}</p>`);
+
+      } else {
+
+        editor.commands.setContent(`<p>Error: Document with ID not found.</p>`);
 
       }
 
