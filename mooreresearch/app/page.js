@@ -9,7 +9,7 @@ function LoadingSpinner() {
 
 // Use next/dynamic to load the editor component only on the client side
 const CollaborativeEditor = dynamic(
-  () => import('./components/Editor'), // Assuming Editor.jsx is in a components folder
+  () => import('../components/Editor'), // Assuming Editor.jsx is in a components folder
   {
     ssr: false, // This is the crucial part
     suspense: true,
