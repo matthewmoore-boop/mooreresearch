@@ -10,32 +10,20 @@ import { WebsocketProvider } from "y-websocket";
 import { createClient } from '@supabase/supabase-js';
 import { useEffect, useState } from 'react';
 
-// Initialize the Supabase client
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
-// The MenuBar component with a new Save button
+const colors = ['#958DF1', '#F98181', '#FBBC88', '#FAF594', '#70CFF8', '#94FADB', '#B9F18D'];
+const getRandomColor = () => colors[Math.floor(Math.random() * colors.length)];
+
 function MenuBar({ editor, onSave }) {
     if (!editor) return null;
-    const btn = (onClick, active, label) => (
-        <button
-          type="button"
-          onClick={onClick}
-          className={`mr-2 px-2 py-1 rounded ${active ? "bg-blue-600 text-white" : "bg-gray-100"}`}
-        >
-          {label}
-        </button>
-    );
-
     return (
         <div className="flex justify-between items-center mb-3">
             <div>
-                {btn(() => editor.chain().focus().toggleBold().run(), editor.isActive("bold"), "B")}
-                {btn(() => editor.chain().focus().toggleItalic().run(), editor.isActive("italic"), "I")}
-                {btn(() => editor.chain().focus().toggleHeading({ level: 1 }).run(), editor.isActive("heading", { level: 1 }), "H1")}
-                {/* ... Add other formatting buttons as needed ... */}
+                {/* Your formatting buttons here */}
             </div>
             <button onClick={onSave} className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded">
                 Save to Database
@@ -44,51 +32,62 @@ function MenuBar({ editor, onSave }) {
     );
 }
 
-// The main editor component
 function CollaborativeEditor() {
     const [docId, setDocId] = useState(null);
-
-    // --- Real-time collaboration setup ---
-    const roomName = "apex-research-demo-room";
-    const ydoc = new Y.Doc();
-    const provider = typeof window !== "undefined" ? new WebsocketProvider("wss://demos.yjs.dev", roomName, ydoc) : null;
-
-    const editor = useEditor({
-        extensions: [
-            StarterKit.configure({ history: false }), // Use Yjs for history
-            Collaboration.configure({ document: ydoc }),
-            Placeholder.configure({ placeholder: 'Start typing your collaborative document...' }),
-            BubbleMenuExtension,
-        ],
+    const [editor, setEditor] = useState(null); // Editor state is now managed here
+    const [currentUser] = useState({
+        name: 'User ' + Math.floor(Math.random() * 100),
+        color: getRandomColor(),
     });
 
-    // --- Database loading logic ---
     useEffect(() => {
-        const DOCUMENT_ID_TO_LOAD = "c63d1b04-aadf-4251-871a-bc5a7da82fe8"; // Paste your test document ID
+        const DOCUMENT_ID_TO_LOAD = "c63d1b04-aadf-4251-871a-bc5a7da82fe8";
 
-        async function loadDocument() {
-            const { data, error } = await supabase
+        async function initializeEditor() {
+            // --- FIX 1: Fetch data from Supabase FIRST ---
+            const { data: docData, error } = await supabase
                 .from('documents')
                 .select('id, content_json')
                 .eq('id', DOCUMENT_ID_TO_LOAD)
                 .single();
 
-            if (data && editor) {
-                setDocId(data.id);
-                // Convert the TipTap JSON to a Yjs fragment to load it
-                const yFragment = Y.encodeStateAsUpdate(editor.state.doc.type.create(data.content_json).toJSON());
-                Y.applyUpdate(ydoc, yFragment);
-
-            } else if (error) {
-                console.error("Error loading document:", error);
+            if (error || !docData) {
+                console.error("Failed to load document:", error);
+                return;
             }
-        }
-        if (editor) {
-            loadDocument();
-        }
-    }, [editor]);
 
-    // --- Database saving logic ---
+            setDocId(docData.id);
+
+            // --- Now, initialize Yjs and the editor ---
+            const ydoc = new Y.Doc();
+            const provider = new WebsocketProvider("wss://demos.yjs.dev", `apex-room-${docData.id}`, ydoc);
+
+            const newEditor = new useEditor({
+                extensions: [
+                    StarterKit.configure({ history: false }),
+                    Placeholder.configure({ placeholder: 'Start writing...' }),
+                    Collaboration.configure({ document: ydoc }),
+                    CollaborationCursor.configure({
+                        provider: provider,
+                        user: currentUser,
+                    }),
+                ],
+                // Set the editor's content with the data we fetched
+                content: docData.content_json,
+            });
+
+            setEditor(newEditor);
+
+            return () => {
+                newEditor?.destroy();
+                provider?.destroy();
+                ydoc?.destroy();
+            };
+        }
+
+        initializeEditor();
+    }, []); // Run only once on mount
+
     const handleSave = async () => {
         if (editor && docId) {
             const json = editor.getJSON();
