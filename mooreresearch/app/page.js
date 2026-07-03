@@ -233,20 +233,31 @@ function CollaborativeEditor() {
             return;
         }
 
+        const saveId = docId || DOCUMENT_ID_TO_LOAD;
         const json = editor.getJSON();
-        const savePayload = {
-            id: docId || DOCUMENT_ID_TO_LOAD,
+        const payload = {
             content_json: json,
             updated_at: new Date().toISOString(),
         };
 
-        const { error } = await supabase
+        let result = await supabase
             .from('documents')
-            .upsert(savePayload, { onConflict: 'id' });
+            .update(payload)
+            .eq('id', saveId)
+            .select('id, content_json')
+            .single();
 
-        if (error) {
-            console.error('Save failed', error);
-            alert('Error saving document: ' + error.message);
+        if (result.error) {
+            console.warn('Update failed, trying insert fallback', result.error);
+            result = await supabase.from('documents').insert({
+                id: saveId,
+                ...payload,
+            });
+        }
+
+        if (result.error) {
+            console.error('Save failed', result.error);
+            alert('Error saving document: ' + result.error.message);
             return;
         }
 
@@ -255,7 +266,7 @@ function CollaborativeEditor() {
         }
 
         if (!docId) {
-            setDocId(DOCUMENT_ID_TO_LOAD);
+            setDocId(saveId);
         }
 
         alert('Document saved successfully!');
