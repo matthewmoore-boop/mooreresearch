@@ -1,8 +1,10 @@
 "use client";
 
-import { useEditor, EditorContent } from "@tiptap/react";
+import { useEditor, EditorContent, BubbleMenu } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Collaboration from "@tiptap/extension-collaboration";
+import Placeholder from "@tiptap/extension-placeholder";
+import BubbleMenuExtension from "@tiptap/extension-bubble-menu";
 import * as Y from "yjs";
 import { WebsocketProvider } from "y-websocket";
 import { createClient } from '@supabase/supabase-js';
@@ -55,6 +57,8 @@ function CollaborativeEditor() {
         extensions: [
             StarterKit.configure({ history: false }), // Use Yjs for history
             Collaboration.configure({ document: ydoc }),
+            Placeholder.configure({ placeholder: 'Start typing your collaborative document...' }),
+            BubbleMenuExtension,
         ],
     });
 
@@ -105,6 +109,45 @@ function CollaborativeEditor() {
         <div className="max-w-4xl mx-auto mt-10 border border-gray-300 rounded-lg shadow-lg relative">
             <div className="p-4">
                 <MenuBar editor={editor} onSave={handleSave} />
+                {editor ? (
+                    <BubbleMenu editor={editor} tippyOptions={{ duration: 100 }} className="bg-white shadow-lg rounded px-2 py-1 border border-gray-200">
+                        <button
+                            type="button"
+                            onClick={() => editor.chain().focus().toggleBold().run()}
+                            className="mr-2 px-2 py-1 bg-gray-100 rounded"
+                        >
+                            B
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => editor.chain().focus().toggleItalic().run()}
+                            className="mr-2 px-2 py-1 bg-gray-100 rounded"
+                        >
+                            I
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
+                            className="mr-2 px-2 py-1 bg-gray-100 rounded"
+                        >
+                            H1
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => editor.chain().focus().toggleBulletList().run()}
+                            className="mr-2 px-2 py-1 bg-gray-100 rounded"
+                        >
+                            •
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => editor.chain().focus().toggleCodeBlock().run()}
+                            className="px-2 py-1 bg-gray-100 rounded"
+                        >
+                            {'</>'}
+                        </button>
+                    </BubbleMenu>
+                ) : null}
                 <div className="p-5 min-h-[300px] bg-white rounded">
                     <EditorContent editor={editor} />
                 </div>
