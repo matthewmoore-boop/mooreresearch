@@ -207,6 +207,18 @@ function CollaborativeEditor() {
         content: '<p>Start typing...</p>',
     });
 
+    const [tempContent, setTempContent] = useState('');
+
+    useEffect(() => {
+        if (editor && tempContent) {
+            try {
+                editor.commands.setContent(tempContent);
+            } catch (e) {
+                console.warn('Failed to set temp content into editor', e);
+            }
+        }
+    }, [editor, tempContent]);
+
        // --- CONSOLIDATED USEEFFECT HOOK ---
     useEffect(() => {
         let provider = null;
@@ -286,7 +298,16 @@ function CollaborativeEditor() {
              <div className="p-4">
                 <MenuBar editor={editor} onSave={handleSave} />
                 <div className="p-5 min-h-[300px] bg-white rounded">
-                    <EditorContent editor={editor} />
+                    {editor ? (
+                        <EditorContent editor={editor} />
+                    ) : (
+                        <textarea
+                            value={tempContent}
+                            onChange={(e) => setTempContent(e.target.value)}
+                            className="w-full min-h-[300px] p-3 border rounded"
+                            placeholder="Loading editor... you can type here; it will sync when ready"
+                        />
+                    )}
                 </div>
             </div>
            )}
