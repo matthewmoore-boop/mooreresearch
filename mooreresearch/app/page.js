@@ -5,13 +5,9 @@ import { RichTextPlugin } from "@lexical/react/LexicalRichTextPlugin";
 import { ContentEditable } from "@lexical/react/LexicalContentEditable";
 import { HistoryPlugin } from "@lexical/react/LexicalHistoryPlugin";
 import { LexicalErrorBoundary } from "@lexical/react/LexicalErrorBoundary";
-import { RoomProvider, ClientSideSuspense } from "@liveblocks/react/suspense";
-import { LiveblocksPlugin, FloatingComposer, FloatingThreads, CommentsPopover } from "@liveblocks/react-ui";
-import { useThreads } from "@liveblocks/react/suspense";
-import {
-  liveblocksConfig,
-  LiveblocksPlugin as LexicalLiveblocksPlugin,
-} from "@liveblocks/react-lexical";
+import { RoomProvider, ClientSideSuspense, LiveblocksProvider, useThreads } from "@liveblocks/react/suspense";
+import { FloatingComposer, FloatingThreads, CommentsPopover } from "@liveblocks/react-ui";
+import { liveblocksConfig, LiveblocksPlugin } from "@liveblocks/react-lexical";
 
 // A loading spinner
 function Loading() {
@@ -23,34 +19,28 @@ function CollaborativeEditor() {
   const { threads } = useThreads();
 
   const initialConfig = liveblocksConfig({
-    // Pass Liveblocks client
-    client: LiveblocksPlugin.useClient(),
-
-    // Pass Liveblocks room presence
-    presence: LiveblocksPlugin.usePresence(),
-
-    // Pass Liveblocks error listener
-    errorListener: LiveblocksPlugin.useErrorListener(),
-
-    // Pass Liveblocks yjs provider
-    provider: LexicalLiveblocksPlugin.useYjsProvider(),
+    namespace: "apex-research-editor",
+    theme: {},
+    nodes: [],
+    onError: (err) => console.error(err),
   });
 
   return (
     <div className="max-w-4xl mx-auto mt-10 border border-gray-300 rounded-lg shadow-lg relative">
         <LexicalComposer initialConfig={initialConfig}>
-            <div className="relative">
-                <RichTextPlugin
-                    contentEditable={<ContentEditable className="p-5 focus:outline-none min-h-[300px]" />}
-                    placeholder={<div className="p-5 absolute top-0 left-0 pointer-events-none text-gray-400">Start typing...</div>}
-                    ErrorBoundary={LexicalErrorBoundary}
-                />
-                <HistoryPlugin />
-                <LexicalLiveblocksPlugin />
-            </div>
-            <CommentsPopover />
-            <FloatingComposer />
-            <FloatingThreads threads={threads} />
+            <LiveblocksPlugin>
+                <div className="relative">
+                    <RichTextPlugin
+                        contentEditable={<ContentEditable className="p-5 focus:outline-none min-h-[300px]" />}
+                        placeholder={<div className="p-5 absolute top-0 left-0 pointer-events-none text-gray-400">Start typing...</div>}
+                        ErrorBoundary={LexicalErrorBoundary}
+                    />
+                    <HistoryPlugin />
+                    <CommentsPopover />
+                    <FloatingComposer />
+                    <FloatingThreads threads={threads} />
+                </div>
+            </LiveblocksPlugin>
         </LexicalComposer>
     </div>
   );
@@ -59,15 +49,16 @@ function CollaborativeEditor() {
 // The main page component that provides the Liveblocks context
 export default function Page() {
   return (
-    <RoomProvider
-      id="apex-research-demo-room"
-      initialPresence={{}}
-      initialStorage={{}}
-      authEndpoint="/api/liveblocks-auth"
-    >
-      <ClientSideSuspense fallback={<Loading />}>
-        <CollaborativeEditor />
-      </ClientSideSuspense>
-    </RoomProvider>
+    <LiveblocksProvider authEndpoint="/api/liveblocks-auth">
+      <RoomProvider
+        id="apex-research-demo-room"
+        initialPresence={{}}
+        initialStorage={{}}
+      >
+        <ClientSideSuspense fallback={<Loading />}>
+          <CollaborativeEditor />
+        </ClientSideSuspense>
+      </RoomProvider>
+    </LiveblocksProvider>
   );
 }
