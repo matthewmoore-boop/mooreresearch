@@ -29,6 +29,8 @@ const supabase = createClient(
 
 const colors = ['#958DF1', '#F98181', '#FBBC88', '#FAF594', '#70CFF8', '#94FADB', '#B9F18D'];
 const getRandomColor = () => colors[Math.floor(Math.random() * colors.length)];
+const DRAFT_STORAGE_KEY = 'mooreresearch-doc-draft';
+const DOCUMENT_ID_TO_LOAD = 'c63d1b04-aadf-4251-871a-bc5a7da82fe8';
 
 function MenuBar({ editor, onSave }) {
     if (!editor) return null;
@@ -146,6 +148,14 @@ function CollaborativeEditor() {
         extensions,
         content: '<p>Loading editor...</p>',
         editable: true,
+        onUpdate: ({ editor }) => {
+            const json = editor.getJSON();
+            try {
+                window.localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(json));
+            } catch (e) {
+                console.warn('Unable to save draft locally', e);
+            }
+        },
     });
 
     useEffect(() => {
@@ -160,7 +170,16 @@ function CollaborativeEditor() {
         let providerInstance = null;
 
         async function initialize() {
-            const DOCUMENT_ID_TO_LOAD = 'c63d1b04-aadf-4251-871a-bc5a7da82fe8';
+            let draft = null;
+
+            if (typeof window !== 'undefined') {
+                try {
+                    const savedDraft = window.localStorage.getItem(DRAFT_STORAGE_KEY);
+                    draft = savedDraft ? JSON.parse(savedDraft) : null;
+                } catch (e) {
+                    console.warn('Unable to parse saved draft', e);
+                }
+            }
 
             const { data, error } = await supabase
                 .from('documents')
@@ -185,7 +204,11 @@ function CollaborativeEditor() {
             setProvider(providerInstance);
 
             if (editor) {
-                editor.commands.setContent(data.content_json || '<p>Start typing...</p>');
+                if (draft) {
+                    editor.commands.setContent(draft);
+                } else {
+                    editor.commands.setContent(data.content_json || '<p>Start typing...</p>');
+                }
             }
 
             setLoading(false);
@@ -205,21 +228,37 @@ function CollaborativeEditor() {
     }, [ydoc]);
 
     const handleSave = async () => {
-        if (!editor || !docId) {
+        if (!editor) {
+            alert('Editor is not ready yet. Please wait a moment.');
             return;
         }
 
         const json = editor.getJSON();
+        const savePayload = {
+            id: docId || DOCUMENT_ID_TO_LOAD,
+            content_json: json,
+            updated_at: new Date().toISOString(),
+        };
+
         const { error } = await supabase
             .from('documents')
-            .update({ content_json: json, updated_at: new Date().toISOString() })
-            .eq('id', docId);
+            .upsert(savePayload, { onConflict: 'id' });
 
         if (error) {
+            console.error('Save failed', error);
             alert('Error saving document: ' + error.message);
-        } else {
-            alert('Document saved successfully!');
+            return;
         }
+
+        if (typeof window !== 'undefined') {
+            window.localStorage.removeItem(DRAFT_STORAGE_KEY);
+        }
+
+        if (!docId) {
+            setDocId(DOCUMENT_ID_TO_LOAD);
+        }
+
+        alert('Document saved successfully!');
     };
 
     return (
