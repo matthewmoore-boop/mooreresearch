@@ -11,7 +11,7 @@ import { useThreads } from "@liveblocks/react/suspense";
 import {
   liveblocksConfig,
   LiveblocksPlugin as LexicalLiveblocksPlugin,
-} from "@liveblocks/lexical";
+} from "@liveblocks/react-lexical";
 
 // A loading spinner
 function Loading() {
