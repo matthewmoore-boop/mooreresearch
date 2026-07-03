@@ -170,8 +170,6 @@ function MenuBar({ editor, onSave }) {
 
 function CollaborativeEditor() {
     const [docId, setDocId] = useState(null);
-    const [isSaving, setIsSaving] = useState(false);
-    const [saveMessage, setSaveMessage] = useState('');
     const editor = useEditor({
         extensions: [
             StarterKit.configure({ history: false }),
@@ -204,15 +202,15 @@ function CollaborativeEditor() {
                 .eq('id', DOCUMENT_ID_TO_LOAD)
                 .single();
 
-            if (error) {
-                console.warn('Document not found, starting with a new document:', error?.message);
-                setDocId(DOCUMENT_ID_TO_LOAD);
+            if (error || !data) {
+                console.error('Failed to load document:', error);
                 return;
             }
 
-            if (data) {
-                setDocId(data.id);
-                editor?.commands.setContent(data.content_json);
+            setDocId(data.id);
+
+            if (editor) {
+                editor.commands.setContent(data.content_json);
             }
         }
 
@@ -222,35 +220,19 @@ function CollaborativeEditor() {
     }, [editor]);
 
     const handleSave = async () => {
-        if (!editor) {
-            return;
+        if (editor && docId) {
+            const json = editor.getJSON();
+            const { error } = await supabase
+                .from('documents')
+                .update({ content_json: json, updated_at: new Date().toISOString() })
+                .eq('id', docId);
+
+            if (error) {
+                alert('Error saving document: ' + error.message);
+            } else {
+                alert('Document saved successfully!');
+            }
         }
-
-        setIsSaving(true);
-        setSaveMessage('');
-
-        const json = editor.getJSON();
-        const id = docId || "c63d1b04-aadf-4251-871a-bc5a7da82fe8";
-        const payload = {
-            id,
-            content_json: json,
-            updated_at: new Date().toISOString(),
-        };
-
-        const { error } = await supabase
-            .from('documents')
-            .upsert(payload, { onConflict: ['id'] });
-
-        setIsSaving(false);
-
-        if (error) {
-            setSaveMessage('Save failed: ' + error.message);
-            console.error('Save error:', error);
-            return;
-        }
-
-        setDocId(id);
-        setSaveMessage('Document saved successfully.');
     };
 
     return (
@@ -260,11 +242,6 @@ function CollaborativeEditor() {
                 <div className="p-5 min-h-[300px] bg-white rounded">
                     <EditorContent editor={editor} />
                 </div>
-                {saveMessage ? (
-                    <div className="mt-3 text-sm text-slate-700">
-                        {isSaving ? 'Saving document...' : saveMessage}
-                    </div>
-                ) : null}
             </div>
         </div>
     );
