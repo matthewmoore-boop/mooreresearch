@@ -16,6 +16,7 @@ import { Table } from '@tiptap/extension-table';
 import TableRow from '@tiptap/extension-table-row';
 import TableCell from '@tiptap/extension-table-cell';
 import TableHeader from '@tiptap/extension-table-header';
+import CollaborationCursor from '@tiptap/extension-collaboration-cursor';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import { createClient } from '@supabase/supabase-js';
@@ -104,11 +105,16 @@ function MenuBar({ editor, onSave }) {
 function CollaborativeEditor() {
     const ydoc = useMemo(() => new Y.Doc(), []);
     const [docId, setDocId] = useState(null);
+    const [provider, setProvider] = useState(null);
     const [loading, setLoading] = useState(true);
     const [errorMessage, setErrorMessage] = useState('');
+    const [currentUser] = useState({
+        name: 'User ' + Math.floor(Math.random() * 100),
+        color: getRandomColor(),
+    });
 
-    const editor = useEditor({
-        extensions: [
+    const extensions = useMemo(() => {
+        const baseExtensions = [
             StarterKit.configure({ history: false }),
             Placeholder.configure({ placeholder: 'Start writing your research note...' }),
             Collaboration.configure({ document: ydoc }),
@@ -123,7 +129,21 @@ function CollaborativeEditor() {
             TableRow,
             TableHeader,
             TableCell,
-        ],
+        ];
+
+        if (provider) {
+            return [
+                ...baseExtensions.slice(0, 3),
+                CollaborationCursor.configure({ provider, user: currentUser }),
+                ...baseExtensions.slice(3),
+            ];
+        }
+
+        return baseExtensions;
+    }, [ydoc, provider, currentUser]);
+
+    const editor = useEditor({
+        extensions,
         content: '<p>Loading editor...</p>',
         editable: true,
     });
