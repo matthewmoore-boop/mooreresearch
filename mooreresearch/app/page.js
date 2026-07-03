@@ -32,6 +32,18 @@ const getRandomColor = () => colors[Math.floor(Math.random() * colors.length)];
 const DRAFT_STORAGE_KEY = 'mooreresearch-doc-draft';
 const DOCUMENT_ID_TO_LOAD = 'c63d1b04-aadf-4251-871a-bc5a7da82fe8';
 
+function parseContentJson(value) {
+    if (typeof value === 'string') {
+        try {
+            return JSON.parse(value);
+        } catch (error) {
+            console.warn('Unable to parse content_json from database', error);
+            return null;
+        }
+    }
+    return value;
+}
+
 function MenuBar({ editor, onSave }) {
     if (!editor) return null;
 
@@ -204,10 +216,11 @@ function CollaborativeEditor() {
             setProvider(providerInstance);
 
             if (editor) {
-                if (draft) {
-                    editor.commands.setContent(draft);
-                } else {
-                    editor.commands.setContent(data.content_json || '<p>Start typing...</p>');
+                const dbContent = parseContentJson(data.content_json) || '<p>Start typing...</p>';
+                editor.commands.setContent(dbContent);
+
+                if (draft && JSON.stringify(draft) !== JSON.stringify(dbContent)) {
+                    console.info('Local draft differs from database content; keeping database content on load.');
                 }
             }
 
