@@ -9,8 +9,7 @@
     "lint": "eslint"
   },
 "dependencies": {
-  "@liveblocks/client": "^2.1.0",
-  "@liveblocks/react": "^2.1.0",
+  "@liveblocks/client": "^2.1.0",  "@liveblocks/node": "^2.1.0",  "@liveblocks/react": "^2.1.0",
   "@liveblocks/react-lexical": "^2.1.0",
   "@liveblocks/react-ui": "^2.1.0",
   "@lexical/react": "0.24.0",
