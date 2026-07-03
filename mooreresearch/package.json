@@ -8,17 +8,23 @@
     "start": "next start",
     "lint": "eslint"
   },
-"dependencies": {
-  "@liveblocks/client": "^2.1.0",  "@liveblocks/node": "^2.1.0",  "@liveblocks/react": "^2.1.0",
-  "@liveblocks/react-lexical": "^2.1.0",
-  "@liveblocks/react-ui": "^2.1.0",
-  "@lexical/react": "0.24.0",
-  "lexical": "0.24.0",
-  "next": "14.2.3",
-  "react": "^18",
-  "react-dom": "^18",
-  "yjs": "^13.6.14"
-},
+  "dependencies": {
+    "@lexical/react": "0.24.0",
+    "@liveblocks/client": "^2.1.0",
+    "@liveblocks/node": "^2.1.0",
+    "@liveblocks/react": "^2.1.0",
+    "@liveblocks/react-lexical": "^2.1.0",
+    "@liveblocks/react-ui": "^2.1.0",
+    "@tiptap/react": "^3.27.1",
+    "@tiptap/starter-kit": "^3.27.1",
+    "@tiptap/extension-collaboration": "^3.27.1",
+    "lexical": "0.24.0",
+    "next": "14.2.3",
+    "react": "^18",
+    "react-dom": "^18",
+    "yjs": "^13.6.14"
+    ,"y-websocket": "^1.4.5"
+  },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "eslint": "^9",

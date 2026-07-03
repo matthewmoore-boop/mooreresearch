@@ -1,13 +1,12 @@
 "use client";
 
-import { LexicalComposer } from "@lexical/react/LexicalComposer";
-import { RichTextPlugin } from "@lexical/react/LexicalRichTextPlugin";
-import { ContentEditable } from "@lexical/react/LexicalContentEditable";
-import { HistoryPlugin } from "@lexical/react/LexicalHistoryPlugin";
-import { LexicalErrorBoundary } from "@lexical/react/LexicalErrorBoundary";
+import { useEditor, EditorContent } from "@tiptap/react";
+import StarterKit from "@tiptap/starter-kit";
+import Collaboration from "@tiptap/extension-collaboration";
+import * as Y from "yjs";
+import { WebsocketProvider } from "y-websocket";
 import { ClientSideSuspense } from "@liveblocks/react/suspense";
-import { LiveblocksProvider, RoomProvider, useThreads } from "@liveblocks/react";
-import { liveblocksConfig, LiveblocksPlugin, FloatingComposer, FloatingThreads } from "@liveblocks/react-lexical";
+import { LiveblocksProvider, RoomProvider } from "@liveblocks/react";
 
 // A loading spinner
 function Loading() {
@@ -16,31 +15,43 @@ function Loading() {
 
 // The main editor component
 function CollaborativeEditor() {
-  const { threads } = useThreads();
+  // Create a Y.Doc and WebSocket provider for real-time collaboration
+  const roomName = "apex-research-room";
+  const ydoc = new Y.Doc();
+  const provider = typeof window !== "undefined" ? new WebsocketProvider("wss://demos.yjs.dev", roomName, ydoc) : null;
 
-  const initialConfig = liveblocksConfig({
-    namespace: "apex-research-editor",
-    theme: {},
-    nodes: [],
-    onError: (err) => console.error(err),
+  const editor = useEditor({
+    extensions: [
+      StarterKit,
+      Collaboration.configure({ document: ydoc }),
+    ],
+    content: "<p>Start typing...</p>",
   });
 
   return (
     <div className="max-w-4xl mx-auto mt-10 border border-gray-300 rounded-lg shadow-lg relative">
-      <LexicalComposer initialConfig={initialConfig}>
-        <LiveblocksPlugin>
-          <div className="relative">
-            <RichTextPlugin
-              contentEditable={<ContentEditable className="p-5 focus:outline-none min-h-[300px]" />}
-              placeholder={<div className="p-5 absolute top-0 left-0 pointer-events-none text-gray-400">Start typing...</div>}
-              ErrorBoundary={LexicalErrorBoundary}
-            />
-            <HistoryPlugin />
-            <FloatingComposer />
-            <FloatingThreads threads={threads} />
-          </div>
-        </LiveblocksPlugin>
-      </LexicalComposer>
+      <div className="p-4">
+        <div className="mb-2">
+          <button
+            type="button"
+            onClick={() => editor && editor.chain().focus().toggleBold().run()}
+            className="mr-2 px-2 py-1 bg-gray-100 rounded"
+          >
+            Bold
+          </button>
+          <button
+            type="button"
+            onClick={() => editor && editor.chain().focus().toggleItalic().run()}
+            className="mr-2 px-2 py-1 bg-gray-100 rounded"
+          >
+            Italic
+          </button>
+        </div>
+
+        <div className="p-5 min-h-[300px] bg-white rounded">
+          <EditorContent editor={editor} />
+        </div>
+      </div>
     </div>
   );
 }
