@@ -13,6 +13,7 @@ import Color from '@tiptap/extension-color';
 import Highlight from '@tiptap/extension-highlight';
 import Image from '@tiptap/extension-image';
 import { Table } from '@tiptap/extension-table';
+import CollaborationCursor from '@tiptap/extension-collaboration-cursor';
 import TableRow from '@tiptap/extension-table-row';
 import TableCell from '@tiptap/extension-table-cell';
 import TableHeader from '@tiptap/extension-table-header';
@@ -53,8 +54,13 @@ function MenuBar({ editor, onSave }) {
 function CollaborativeEditor() {
     const ydoc = useMemo(() => new Y.Doc(), []);
     const [docId, setDocId] = useState(null);
+    const [provider, setProvider] = useState(null);
     const [loading, setLoading] = useState(true);
     const [errorMessage, setErrorMessage] = useState('');
+    const [currentUser] = useState({
+        name: 'User ' + Math.floor(Math.random() * 100),
+        color: getRandomColor(),
+    });
 
     const editor = useEditor({
         extensions: [
@@ -78,7 +84,33 @@ function CollaborativeEditor() {
     });
 
     useEffect(() => {
-        let provider = null;
+        if (!editor || !provider) {
+            return;
+        }
+
+        editor.setOptions({
+            extensions: [
+                StarterKit.configure({ history: false }),
+                Placeholder.configure({ placeholder: 'Start writing your research note...' }),
+                Collaboration.configure({ document: ydoc }),
+                CollaborationCursor.configure({ provider, user: currentUser }),
+                Underline,
+                Link.configure({ openOnClick: false }),
+                TextAlign.configure({ types: ['heading', 'paragraph'] }),
+                TextStyle,
+                Color.configure({ types: ['textStyle'] }),
+                Highlight.configure({ multicolor: true }),
+                Image.configure({ inline: false, allowBase64: true }),
+                Table.configure({ resizable: true }),
+                TableRow,
+                TableHeader,
+                TableCell,
+            ],
+        });
+    }, [editor, provider, ydoc, currentUser]);
+
+    useEffect(() => {
+        let providerInstance = null;
 
         async function initialize() {
             const DOCUMENT_ID_TO_LOAD = 'c63d1b04-aadf-4251-871a-bc5a7da82fe8';
@@ -98,11 +130,12 @@ function CollaborativeEditor() {
 
             setDocId(data.id);
 
-            provider = new WebsocketProvider(
+            providerInstance = new WebsocketProvider(
                 'wss://demos.yjs.dev',
                 `mooreresearch-collab-room-${data.id}`,
                 ydoc
             );
+            setProvider(providerInstance);
 
             if (editor) {
                 editor.commands.setContent(data.content_json || '<p>Start typing...</p>');
@@ -114,10 +147,15 @@ function CollaborativeEditor() {
         initialize();
 
         return () => {
-            provider?.destroy();
-            ydoc.destroy();
+            providerInstance?.destroy();
         };
     }, [editor, ydoc]);
+
+    useEffect(() => {
+        return () => {
+            ydoc.destroy();
+        };
+    }, [ydoc]);
 
     const handleSave = async () => {
         if (!editor || !docId) {
