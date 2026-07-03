@@ -13,7 +13,6 @@ import Color from '@tiptap/extension-color';
 import Highlight from '@tiptap/extension-highlight';
 import Image from '@tiptap/extension-image';
 import { Table } from '@tiptap/extension-table';
-import CollaborationCursor from '@tiptap/extension-collaboration-cursor';
 import TableRow from '@tiptap/extension-table-row';
 import TableCell from '@tiptap/extension-table-cell';
 import TableHeader from '@tiptap/extension-table-header';
@@ -34,7 +33,7 @@ function MenuBar({ editor, onSave }) {
     if (!editor) return null;
 
     const buttonClass = (active) =>
-        `mr-2 px-2 py-1 rounded ${active ? "bg-blue-600 text-white" : "bg-gray-100"}`;
+        `mr-2 mb-2 px-2 py-1 rounded border ${active ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`;
 
     const btn = (onClick, active, label) => (
         <button type="button" onClick={onClick} className={buttonClass(active)}>
@@ -43,8 +42,59 @@ function MenuBar({ editor, onSave }) {
     );
 
     return (
-        <div className="flex justify-end border-b pb-2 mb-2">
-            <button onClick={onSave} className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-1 px-4 rounded-lg shadow-sm">
+        <div className="flex flex-wrap gap-2 border-b pb-3 mb-3">
+            {btn(() => editor.chain().focus().toggleBold().run(), editor.isActive('bold'), 'Bold')}
+            {btn(() => editor.chain().focus().toggleItalic().run(), editor.isActive('italic'), 'Italic')}
+            {btn(() => editor.chain().focus().toggleStrike().run(), editor.isActive('strike'), 'Strike')}
+            {btn(() => editor.chain().focus().toggleUnderline().run(), editor.isActive('underline'), 'Underline')}
+            {btn(() => editor.chain().focus().toggleHeading({ level: 1 }).run(), editor.isActive('heading', { level: 1 }), 'H1')}
+            {btn(() => editor.chain().focus().toggleHeading({ level: 2 }).run(), editor.isActive('heading', { level: 2 }), 'H2')}
+            {btn(() => editor.chain().focus().setParagraph().run(), editor.isActive('paragraph'), 'Paragraph')}
+            {btn(() => editor.chain().focus().toggleBulletList().run(), editor.isActive('bulletList'), 'Bullet')}
+            {btn(() => editor.chain().focus().toggleOrderedList().run(), editor.isActive('orderedList'), 'Numbered')}
+            {btn(() => editor.chain().focus().toggleBlockquote().run(), editor.isActive('blockquote'), 'Quote')}
+            {btn(() => editor.chain().focus().setTextAlign('left').run(), editor.isActive({ textAlign: 'left' }), 'Left')}
+            {btn(() => editor.chain().focus().setTextAlign('center').run(), editor.isActive({ textAlign: 'center' }), 'Center')}
+            {btn(() => editor.chain().focus().setTextAlign('right').run(), editor.isActive({ textAlign: 'right' }), 'Right')}
+            {btn(() => editor.chain().focus().toggleHighlight({ color: '#FCEF6D' }).run(), editor.isActive('highlight'), 'Highlight')}
+            <button
+                type="button"
+                className={buttonClass(false)}
+                onClick={() => {
+                    const url = window.prompt('Enter image URL');
+                    if (url) {
+                        editor.chain().focus().setImage({ src: url }).run();
+                    }
+                }}
+            >
+                Image
+            </button>
+            <button
+                type="button"
+                className={buttonClass(false)}
+                onClick={() => {
+                    editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
+                }}
+            >
+                Table
+            </button>
+            <button
+                type="button"
+                className={buttonClass(false)}
+                onClick={() => {
+                    const href = window.prompt('Enter URL');
+                    if (href) {
+                        editor.chain().focus().extendMarkRange('link').setLink({ href }).run();
+                    }
+                }}
+            >
+                Link
+            </button>
+            <button
+                type="button"
+                onClick={onSave}
+                className="ml-auto bg-slate-900 hover:bg-slate-800 text-white font-semibold py-1 px-4 rounded-lg shadow-sm"
+            >
                 Save to Database
             </button>
         </div>
@@ -54,13 +104,8 @@ function MenuBar({ editor, onSave }) {
 function CollaborativeEditor() {
     const ydoc = useMemo(() => new Y.Doc(), []);
     const [docId, setDocId] = useState(null);
-    const [provider, setProvider] = useState(null);
     const [loading, setLoading] = useState(true);
     const [errorMessage, setErrorMessage] = useState('');
-    const [currentUser] = useState({
-        name: 'User ' + Math.floor(Math.random() * 100),
-        color: getRandomColor(),
-    });
 
     const editor = useEditor({
         extensions: [
@@ -80,34 +125,16 @@ function CollaborativeEditor() {
             TableCell,
         ],
         content: '<p>Loading editor...</p>',
-        editable: !loading,
+        editable: true,
     });
 
     useEffect(() => {
-        if (!editor || !provider) {
+        if (!editor) {
             return;
         }
 
-        editor.setOptions({
-            extensions: [
-                StarterKit.configure({ history: false }),
-                Placeholder.configure({ placeholder: 'Start writing your research note...' }),
-                Collaboration.configure({ document: ydoc }),
-                CollaborationCursor.configure({ provider, user: currentUser }),
-                Underline,
-                Link.configure({ openOnClick: false }),
-                TextAlign.configure({ types: ['heading', 'paragraph'] }),
-                TextStyle,
-                Color.configure({ types: ['textStyle'] }),
-                Highlight.configure({ multicolor: true }),
-                Image.configure({ inline: false, allowBase64: true }),
-                Table.configure({ resizable: true }),
-                TableRow,
-                TableHeader,
-                TableCell,
-            ],
-        });
-    }, [editor, provider, ydoc, currentUser]);
+        editor.setEditable(true);
+    }, [editor]);
 
     useEffect(() => {
         let providerInstance = null;
