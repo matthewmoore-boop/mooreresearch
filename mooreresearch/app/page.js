@@ -20,7 +20,7 @@ import TableHeader from "@tiptap/extension-table-header";
 import * as Y from "yjs";
 import { WebsocketProvider } from "y-websocket";
 import { createClient } from '@supabase/supabase-js';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -170,11 +170,26 @@ function MenuBar({ editor, onSave }) {
 
 function CollaborativeEditor() {
     const [docId, setDocId] = useState(null);
+    const ydoc = useMemo(() => new Y.Doc(), []);
+
+    useEffect(() => {
+        const provider = new WebsocketProvider(
+            'wss://demos.yjs.dev',
+            'mooreresearch-collab-room',
+            ydoc
+        );
+
+        return () => {
+            provider.destroy();
+            ydoc.destroy();
+        };
+    }, [ydoc]);
+
     const editor = useEditor({
         extensions: [
             StarterKit.configure({ history: false }),
             Placeholder.configure({ placeholder: 'Start writing...' }),
-            Collaboration.configure({ document: new Y.Doc() }),
+            Collaboration.configure({ document: ydoc }),
             Underline,
             Link.configure({ openOnClick: false }),
             TextAlign.configure({ types: ['heading', 'paragraph'] }),
