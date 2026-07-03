@@ -1,10 +1,10 @@
 "use client";
 
-import { useEditor, EditorContent, BubbleMenu } from "@tiptap/react";
+import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Collaboration from "@tiptap/extension-collaboration";
 import Placeholder from "@tiptap/extension-placeholder";
-import BubbleMenuExtension from "@tiptap/extension-bubble-menu";
+import BubbleMenuExtension, { BubbleMenu } from "@tiptap/extension-bubble-menu";
 import * as Y from "yjs";
 import { WebsocketProvider } from "y-websocket";
 import { createClient } from '@supabase/supabase-js';
