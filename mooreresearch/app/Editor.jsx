@@ -3,10 +3,9 @@
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Collaboration from '@tiptap/extension-collaboration';
-import CollaborationCursor from '@tiptap/extension-collaboration-cursor';
 import * as Y from 'yjs';
 import { LiveblocksYjsProvider } from '@liveblocks/yjs';
-import { useSelf, useOthers } from "@liveblocks/react/suspense";
+import { useSelf, useOthers } from '@liveblocks/react/suspense';
 import { useEffect, useState } from 'react';
 
 // This is the full editor component that uses Liveblocks hooks.
@@ -28,19 +27,14 @@ export function CollaborativeEditor() {
         setDoc(yDoc);
         setProvider(yProvider);
        
-        if(editor){
+        if (editor) {
             editor.setOptions({
                 extensions: [
                     StarterKit.configure({ history: false }),
                     Collaboration.configure({ document: yDoc }),
-                    CollaborationCursor.configure({
-                        provider: yProvider,
-                        user: userInfo || { name: 'Anonymous', color: '#000000'},
-                    }),
                 ],
-                // Set initial content
-                content: yDoc.getXmlFragment('prosemirror'),
-            })
+                content: '<p>Start writing...</p>',
+            });
         }
         return () => {
           yDoc?.destroy();
