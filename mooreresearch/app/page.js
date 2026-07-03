@@ -5,86 +5,116 @@ import StarterKit from "@tiptap/starter-kit";
 import Collaboration from "@tiptap/extension-collaboration";
 import * as Y from "yjs";
 import { WebsocketProvider } from "y-websocket";
-import { ClientSideSuspense } from "@liveblocks/react/suspense";
-import { LiveblocksProvider, RoomProvider } from "@liveblocks/react";
+import { createClient } from '@supabase/supabase-js';
+import { useEffect, useState } from 'react';
 
-// A loading spinner
-function Loading() {
-  return <div className="p-5">Loading editor...</div>;
+// Initialize the Supabase client
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+);
+
+// The MenuBar component with a new Save button
+function MenuBar({ editor, onSave }) {
+    if (!editor) return null;
+    const btn = (onClick, active, label) => (
+        <button
+          type="button"
+          onClick={onClick}
+          className={`mr-2 px-2 py-1 rounded ${active ? "bg-blue-600 text-white" : "bg-gray-100"}`}
+        >
+          {label}
+        </button>
+    );
+
+    return (
+        <div className="flex justify-between items-center mb-3">
+            <div>
+                {btn(() => editor.chain().focus().toggleBold().run(), editor.isActive("bold"), "B")}
+                {btn(() => editor.chain().focus().toggleItalic().run(), editor.isActive("italic"), "I")}
+                {btn(() => editor.chain().focus().toggleHeading({ level: 1 }).run(), editor.isActive("heading", { level: 1 }), "H1")}
+                {/* ... Add other formatting buttons as needed ... */}
+            </div>
+            <button onClick={onSave} className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded">
+                Save to Database
+            </button>
+        </div>
+    );
 }
 
 // The main editor component
 function CollaborativeEditor() {
-  // Create a Y.Doc and WebSocket provider for real-time collaboration
-  const roomName = "apex-research-room";
-  const ydoc = new Y.Doc();
-  const provider = typeof window !== "undefined" ? new WebsocketProvider("wss://demos.yjs.dev", roomName, ydoc) : null;
+    const [docId, setDocId] = useState(null);
 
-  const editor = useEditor({
-    extensions: [
-      StarterKit,
-      Collaboration.configure({ document: ydoc }),
-    ],
-    content: "<p>Start typing...</p>",
-  });
+    // --- Real-time collaboration setup ---
+    const roomName = "apex-research-demo-room";
+    const ydoc = new Y.Doc();
+    const provider = typeof window !== "undefined" ? new WebsocketProvider("wss://demos.yjs.dev", roomName, ydoc) : null;
 
-  function MenuBar({ editor }) {
-    if (!editor) return null;
+    const editor = useEditor({
+        extensions: [
+            StarterKit.configure({ history: false }), // Use Yjs for history
+            Collaboration.configure({ document: ydoc }),
+        ],
+    });
 
-    const btn = (onClick, active, label) => (
-      <button
-        type="button"
-        onClick={onClick}
-        className={`mr-2 px-2 py-1 rounded ${active ? "bg-blue-600 text-white" : "bg-gray-100"}`}
-      >
-        {label}
-      </button>
-    );
+    // --- Database loading logic ---
+    useEffect(() => {
+        const DOCUMENT_ID_TO_LOAD = "c63d1b04-aadf-4251-871a-bc5a7da82fe8"; // Paste your test document ID
+
+        async function loadDocument() {
+            const { data, error } = await supabase
+                .from('documents')
+                .select('id, content_json')
+                .eq('id', DOCUMENT_ID_TO_LOAD)
+                .single();
+
+            if (data && editor) {
+                setDocId(data.id);
+                // Convert the TipTap JSON to a Yjs fragment to load it
+                const yFragment = Y.encodeStateAsUpdate(editor.state.doc.type.create(data.content_json).toJSON());
+                Y.applyUpdate(ydoc, yFragment);
+
+            } else if (error) {
+                console.error("Error loading document:", error);
+            }
+        }
+        if (editor) {
+            loadDocument();
+        }
+    }, [editor]);
+
+    // --- Database saving logic ---
+    const handleSave = async () => {
+        if (editor && docId) {
+            const json = editor.getJSON();
+            const { error } = await supabase
+                .from('documents')
+                .update({ content_json: json, updated_at: new Date().toISOString() })
+                .eq('id', docId);
+
+            if (error) {
+                alert('Error saving document: ' + error.message);
+            } else {
+                alert('Document saved successfully!');
+            }
+        }
+    };
 
     return (
-      <div className="mb-3">
-        {btn(() => editor.chain().focus().toggleBold().run(), editor.isActive("bold"), "B")}
-        {btn(() => editor.chain().focus().toggleItalic().run(), editor.isActive("italic"), "I")}
-        {btn(() => editor.chain().focus().toggleStrike().run(), editor.isActive("strike"), "S")}
-        {btn(() => editor.chain().focus().toggleHeading({ level: 1 }).run(), editor.isActive("heading", { level: 1 }), "H1")}
-        {btn(() => editor.chain().focus().toggleHeading({ level: 2 }).run(), editor.isActive("heading", { level: 2 }), "H2")}
-        {btn(() => editor.chain().focus().toggleBulletList().run(), editor.isActive("bulletList"), "• List")}
-        {btn(() => editor.chain().focus().toggleOrderedList().run(), editor.isActive("orderedList"), "1. List")}
-        {btn(() => editor.chain().focus().toggleBlockquote().run(), editor.isActive("blockquote"), '"')}
-        {btn(() => editor.chain().focus().toggleCodeBlock().run(), editor.isActive("codeBlock"), "</>")}
-        {btn(() => editor.chain().focus().undo().run(), false, "Undo")}
-        {btn(() => editor.chain().focus().redo().run(), false, "Redo")}
-        {btn(() => editor.chain().focus().clearNodes().unsetAllMarks().run(), false, "Clear")}
-      </div>
-    );
-  }
-
-  return (
-    <div className="max-w-4xl mx-auto mt-10 border border-gray-300 rounded-lg shadow-lg relative">
-      <div className="p-4">
-        <MenuBar editor={editor} />
-
-        <div className="p-5 min-h-[300px] bg-white rounded">
-          <EditorContent editor={editor} />
+        <div className="max-w-4xl mx-auto mt-10 border border-gray-300 rounded-lg shadow-lg relative">
+            <div className="p-4">
+                <MenuBar editor={editor} onSave={handleSave} />
+                <div className="p-5 min-h-[300px] bg-white rounded">
+                    <EditorContent editor={editor} />
+                </div>
+            </div>
         </div>
-      </div>
-    </div>
-  );
+    );
 }
 
-// The main page component that provides the Liveblocks context
+// The main page component
 export default function Page() {
-  return (
-    <LiveblocksProvider authEndpoint="/api/liveblocks-auth">
-      <RoomProvider
-        id="apex-research-demo-room"
-        initialPresence={{}}
-        initialStorage={{}}
-      >
-        <ClientSideSuspense fallback={<Loading />}>
-          <CollaborativeEditor />
-        </ClientSideSuspense>
-      </RoomProvider>
-    </LiveblocksProvider>
-  );
+    // We don't need the Liveblocks providers anymore for this Yjs setup
+    return <CollaborativeEditor />;
 }
