@@ -207,10 +207,16 @@ function CollaborativeEditor() {
         content: '<p>Start typing...</p>',
     });
 
+       // --- CONSOLIDATED USEEFFECT HOOK ---
     useEffect(() => {
+        let provider = null;
+        let ydoc = null;
+        let localEditor = null;
+
         const DOCUMENT_ID_TO_LOAD = "c63d1b04-aadf-4251-871a-bc5a7da82fe8";
 
-        async function loadDocument() {
+        async function initialize() {
+            // STEP 1: Fetch data from Supabase first.
             const { data, error } = await supabase
                 .from('documents')
                 .select('id, content_json')
@@ -218,21 +224,44 @@ function CollaborativeEditor() {
                 .single();
 
             if (error || !data) {
-                console.error('Failed to load document:', error);
+                console.error("Failed to load document:", error);
                 return;
             }
-
             setDocId(data.id);
 
-            if (editor) {
-                editor.commands.setContent(data.content_json);
+            // STEP 2: Initialize Yjs and the WebSocket provider.
+            ydoc = new Y.Doc();
+            provider = new WebsocketProvider('wss://demos.yjs.dev', 'mooreresearch-collab-room', ydoc);
+           
+            // STEP 3: Create the TipTap editor instance.
+            localEditor = new useEditor({
+                extensions: [
+                    StarterKit.configure({ history: false }),
+                    Collaboration.configure({ document: ydoc }),
+                    // ... (all your other extensions)
+                ],
+                // We do NOT set the content here directly anymore.
+            });
+           
+            // Save the created editor to our React state.
+            setEditor(localEditor);
+
+            // STEP 4: Apply the fetched database content to the Yjs document.
+            if (data.content_json) {
+                const yFragment = Y.encodeStateAsUpdate(localEditor.state.doc.type.create(data.content_json).toJSON());
+                Y.applyUpdate(ydoc, yFragment);
             }
         }
 
-        if (editor) {
-            loadDocument();
-        }
-    }, [editor]);
+        initialize();
+
+        // This is the cleanup function that runs when the component unmounts.
+        return () => {
+            provider?.destroy();
+            ydoc?.destroy();
+            localEditor?.destroy();
+        };
+    }, []); // The empty array [] ensures this runs only ONCE.
 
     const handleSave = async () => {
         if (editor && docId) {
@@ -250,14 +279,17 @@ function CollaborativeEditor() {
         }
     };
 
+      // The returned JSX from your CollaborativeEditor component
     return (
         <div className="max-w-4xl mx-auto mt-10 border border-gray-300 rounded-lg shadow-lg relative">
-            <div className="p-4">
+           {editor && ( // <-- This conditional check is new
+             <div className="p-4">
                 <MenuBar editor={editor} onSave={handleSave} />
                 <div className="p-5 min-h-[300px] bg-white rounded">
                     <EditorContent editor={editor} />
                 </div>
             </div>
+           )}
         </div>
     );
 }
