@@ -10,7 +10,8 @@ export async function POST(request) {
 
   // 2. Initialize the AI client
   const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+  const initialModelId = process.env.GENERATIVE_MODEL || "gemini-1.5-flash";
+  let model = genAI.getGenerativeModel({ model: initialModelId });
 
   try {
     // 3. Get the editor's content from the incoming request
@@ -29,8 +30,63 @@ export async function POST(request) {
     try {
       result = await model.generateContent(prompt);
     } catch (genErr) {
-      console.error('Generative API call failed:', genErr);
-      return new Response(JSON.stringify({ error: 'Generative API call failed', details: String(genErr) }), { status: 502, headers: { 'Content-Type': 'application/json' } });
+      console.error('Generative API call failed for model', initialModelId, genErr);
+
+      // Attempt to list models and automatically try alternatives.
+      let availableModels = null;
+      try {
+        if (typeof genAI.listModels === 'function') {
+          const listRaw = await genAI.listModels();
+          availableModels = Array.isArray(listRaw) ? listRaw : listRaw?.models || listRaw;
+
+          // Extract candidate model ids (flexible for different response shapes)
+          const candidateIds = [];
+          if (Array.isArray(availableModels)) {
+            for (const m of availableModels) {
+              if (typeof m === 'string') {
+                candidateIds.push(m);
+              } else if (m?.name) {
+                // name might be like "models/gemini-1.5"
+                const parts = String(m.name).split('/');
+                candidateIds.push(parts[parts.length - 1]);
+              } else if (m?.id) {
+                candidateIds.push(m.id);
+              } else if (m?.model) {
+                candidateIds.push(m.model);
+              }
+            }
+          }
+
+          // Remove duplicates and the initial model id
+          const uniqueCandidates = Array.from(new Set(candidateIds)).filter(x => x && x !== initialModelId);
+
+          // Try each candidate in order until one succeeds
+          for (const candidateId of uniqueCandidates) {
+            try {
+              const candidateModel = genAI.getGenerativeModel({ model: candidateId });
+              const tryResult = await candidateModel.generateContent(prompt);
+              // try to read response similarly to the primary path
+              const tryResponse = await tryResult?.response;
+              const tryText = typeof tryResponse?.text === 'function' ? await tryResponse.text() : (tryResponse?.output || tryResponse?.candidates || JSON.stringify(tryResponse));
+              // success — return immediately
+              return new Response(JSON.stringify({ summary: tryText, model: candidateId }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+            } catch (candidateErr) {
+              console.warn('Candidate model failed:', candidateId, candidateErr);
+              continue; // try next candidate
+            }
+          }
+        }
+      } catch (listErr) {
+        console.warn('Failed to list models:', listErr);
+        availableModels = `Unable to list models using client: ${String(listErr)}`;
+      }
+
+      return new Response(JSON.stringify({
+        error: 'Generative API call failed',
+        details: String(genErr),
+        availableModels,
+        hint: 'Model may not be supported for generateContent with this client/API version. Server attempted to auto-pick other models; see availableModels for candidates.'
+      }), { status: 502, headers: { 'Content-Type': 'application/json' } });
     }
 
     // Some client libraries return different shapes; attempt to read text safely
