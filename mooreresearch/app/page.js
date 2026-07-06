@@ -20,6 +20,21 @@ import CollaborationCursor from '@tiptap/extension-collaboration-cursor';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import { createClient } from '@supabase/supabase-js';
+import {
+    MdFormatBold,
+    MdFormatItalic,
+    MdFormatStrikethrough,
+    MdFormatUnderlined,
+    MdFormatListBulleted,
+    MdFormatListNumbered,
+    MdFormatAlignLeft,
+    MdFormatAlignCenter,
+    MdFormatAlignRight,
+    MdImage,
+    MdTableChart,
+    MdLink,
+    MdSave,
+} from 'react-icons/md';
 
 
 const supabase = createClient(
@@ -48,29 +63,30 @@ function MenuBar({ editor, onSave }) {
     if (!editor) return null;
 
     const buttonClass = (active) =>
-        `mr-2 mb-2 px-2 py-1 rounded border ${active ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`;
+        `mr-2 mb-2 px-2 py-1 rounded border flex items-center gap-2 ${active ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`;
 
-    const btn = (onClick, active, label) => (
-        <button type="button" onClick={onClick} className={buttonClass(active)}>
-            {label}
+    const btn = (onClick, active, label, Icon) => (
+        <button type="button" onClick={onClick} className={buttonClass(active)} title={label}>
+            {Icon ? <Icon className="h-4 w-4" /> : null}
+            <span className="text-sm">{label}</span>
         </button>
     );
 
     return (
         <div className="flex flex-wrap gap-2 border-b pb-3 mb-3">
-            {btn(() => editor.chain().focus().toggleBold().run(), editor.isActive('bold'), 'Bold')}
-            {btn(() => editor.chain().focus().toggleItalic().run(), editor.isActive('italic'), 'Italic')}
-            {btn(() => editor.chain().focus().toggleStrike().run(), editor.isActive('strike'), 'Strike')}
-            {btn(() => editor.chain().focus().toggleUnderline().run(), editor.isActive('underline'), 'Underline')}
+            {btn(() => editor.chain().focus().toggleBold().run(), editor.isActive('bold'), 'Bold', MdFormatBold)}
+            {btn(() => editor.chain().focus().toggleItalic().run(), editor.isActive('italic'), 'Italic', MdFormatItalic)}
+            {btn(() => editor.chain().focus().toggleStrike().run(), editor.isActive('strike'), 'Strike', MdFormatStrikethrough)}
+            {btn(() => editor.chain().focus().toggleUnderline().run(), editor.isActive('underline'), 'Underline', MdFormatUnderlined)}
             {btn(() => editor.chain().focus().toggleHeading({ level: 1 }).run(), editor.isActive('heading', { level: 1 }), 'H1')}
             {btn(() => editor.chain().focus().toggleHeading({ level: 2 }).run(), editor.isActive('heading', { level: 2 }), 'H2')}
             {btn(() => editor.chain().focus().setParagraph().run(), editor.isActive('paragraph'), 'Paragraph')}
-            {btn(() => editor.chain().focus().toggleBulletList().run(), editor.isActive('bulletList'), 'Bullet')}
-            {btn(() => editor.chain().focus().toggleOrderedList().run(), editor.isActive('orderedList'), 'Numbered')}
+            {btn(() => editor.chain().focus().toggleBulletList().run(), editor.isActive('bulletList'), 'Bullet', MdFormatListBulleted)}
+            {btn(() => editor.chain().focus().toggleOrderedList().run(), editor.isActive('orderedList'), 'Numbered', MdFormatListNumbered)}
             {btn(() => editor.chain().focus().toggleBlockquote().run(), editor.isActive('blockquote'), 'Quote')}
-            {btn(() => editor.chain().focus().setTextAlign('left').run(), editor.isActive({ textAlign: 'left' }), 'Left')}
-            {btn(() => editor.chain().focus().setTextAlign('center').run(), editor.isActive({ textAlign: 'center' }), 'Center')}
-            {btn(() => editor.chain().focus().setTextAlign('right').run(), editor.isActive({ textAlign: 'right' }), 'Right')}
+            {btn(() => editor.chain().focus().setTextAlign('left').run(), editor.isActive({ textAlign: 'left' }), 'Left', MdFormatAlignLeft)}
+            {btn(() => editor.chain().focus().setTextAlign('center').run(), editor.isActive({ textAlign: 'center' }), 'Center', MdFormatAlignCenter)}
+            {btn(() => editor.chain().focus().setTextAlign('right').run(), editor.isActive({ textAlign: 'right' }), 'Right', MdFormatAlignRight)}
             {btn(() => editor.chain().focus().toggleHighlight({ color: '#FCEF6D' }).run(), editor.isActive('highlight'), 'Highlight')}
             <button
                 type="button"
@@ -81,8 +97,10 @@ function MenuBar({ editor, onSave }) {
                         editor.chain().focus().setImage({ src: url }).run();
                     }
                 }}
+                title="Image"
             >
-                Image
+                <MdImage className="h-4 w-4" />
+                <span className="text-sm">Image</span>
             </button>
             <button
                 type="button"
@@ -90,8 +108,10 @@ function MenuBar({ editor, onSave }) {
                 onClick={() => {
                     editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
                 }}
+                title="Table"
             >
-                Table
+                <MdTableChart className="h-4 w-4" />
+                <span className="text-sm">Table</span>
             </button>
             <button
                 type="button"
@@ -102,15 +122,19 @@ function MenuBar({ editor, onSave }) {
                         editor.chain().focus().extendMarkRange('link').setLink({ href }).run();
                     }
                 }}
+                title="Link"
             >
-                Link
+                <MdLink className="h-4 w-4" />
+                <span className="text-sm">Link</span>
             </button>
             <button
                 type="button"
                 onClick={onSave}
-                className="ml-auto bg-slate-900 hover:bg-slate-800 text-white font-semibold py-1 px-4 rounded-lg shadow-sm"
+                className="ml-auto bg-slate-900 hover:bg-slate-800 text-white font-semibold py-1 px-4 rounded-lg shadow-sm flex items-center gap-2"
+                title="Save to Database"
             >
-                Save to Database
+                <MdSave className="h-4 w-4" />
+                <span>Save to Database</span>
             </button>
         </div>
     );
