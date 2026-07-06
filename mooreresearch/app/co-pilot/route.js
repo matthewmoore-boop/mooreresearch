@@ -1,22 +1,94 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+﻿import { GoogleGenAI } from "@google/genai";
 import fsPromises from 'fs/promises';
 import path from 'path';
 
-// This is your new AI endpoint.
-export async function POST(request) {
-  // 1. Get the API key from your secure environment variables
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    return new Response("Internal Server Error: AI API key not configured.", { status: 500 });
-  }
+const DEFAULT_MODEL = 'gemini-2.5-flash';
+const FALLBACK_MODELS = [
+  'gemini-2.5-flash',
+  'gemini-2.5-pro',
+  'gemini-1.5',
+  'gemini-1.5-pro',
+  'gemini-1.5-mini',
+  'text-bison-001',
+  'chat-bison-001',
+];
 
-  // 2. Initialize the AI client
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const initialModelId = process.env.GENERATIVE_MODEL || "text-bison-001";
-  let model = genAI.getGenerativeModel({ model: initialModelId });
+async function extractText(response) {
+  if (!response) return '';
+  if (typeof response.text === 'function') {
+    return await response.text();
+  }
+  if (typeof response.text === 'string') {
+    return response.text;
+  }
+  if (typeof response.output === 'string') {
+    return response.output;
+  }
+  if (Array.isArray(response.candidates) && response.candidates.length > 0) {
+    const first = response.candidates[0];
+    return first?.text || first?.output || JSON.stringify(first);
+  }
+  if (response.response) {
+    return extractText(response.response);
+  }
+  return JSON.stringify(response);
+}
+
+async function generateWithModel(ai, modelId, prompt) {
+  return ai.models.generateContent({
+    model: modelId,
+    contents: prompt,
+    config: { maxOutputTokens: 250 },
+  });
+}
+
+async function listModelIds(ai) {
+  const ids = [];
+  try {
+    const pager = await ai.models.list();
+    for await (const model of pager) {
+      if (!model) continue;
+      const rawName = model.name || model.id || model.model || model.displayName || '';
+      const candidate = String(rawName).split('/').pop();
+      if (candidate) ids.push(candidate);
+    }
+  } catch (err) {
+    console.warn('listModelIds failed:', err);
+  }
+  return Array.from(new Set(ids));
+}
+
+async function persistChosenModel(modelId) {
+  const envPath = path.resolve(process.cwd(), '.env.local');
+  let envContent = '';
 
   try {
-    // 3. Get the editor's content from the incoming request
+    envContent = await fsPromises.readFile(envPath, 'utf8');
+  } catch (e) {
+    envContent = '';
+  }
+
+  if (envContent.includes('GENERATIVE_MODEL=')) {
+    envContent = envContent.replace(/GENERATIVE_MODEL=.*/g, `GENERATIVE_MODEL=${modelId}`);
+  } else {
+    if (envContent && !envContent.endsWith('\n')) envContent += '\n';
+    envContent += `GENERATIVE_MODEL=${modelId}\n`;
+  }
+
+  await fsPromises.writeFile(envPath, envContent, 'utf8');
+  return { ok: true, path: '.env.local', model: modelId };
+}
+
+export async function POST(request) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return new Response('Internal Server Error: AI API key not configured.', { status: 500 });
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
+  const initialModelId = process.env.GENERATIVE_MODEL || DEFAULT_MODEL;
+
+  try {
     const req = await request.json();
     const documentContent = req?.content;
 
@@ -24,94 +96,39 @@ export async function POST(request) {
       return new Response(JSON.stringify({ error: 'No content provided in request body (expected { content })' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
     }
 
-    // 4. Construct the prompt for the AI
     const prompt = `You are an expert financial research analyst.\n\nThe following is the JSON content of a research report from a TipTap editor.\nYour task is to write a concise, professional executive summary of no more than three bullet points. Focus on the investment thesis, key valuation points, and primary risks. Return ONLY the summary text.\n\nReport Content:\n${JSON.stringify(documentContent)}`;
 
-    // 5. Send the prompt to the AI and get the response
     let result;
     try {
-      result = await model.generateContent(prompt);
+      result = await generateWithModel(ai, initialModelId, prompt);
     } catch (genErr) {
       console.error('Generative API call failed for model', initialModelId, genErr);
 
-      // Attempt to list models and automatically try alternatives.
       let availableModels = null;
       try {
-        if (typeof genAI.listModels === 'function') {
-          const listRaw = await genAI.listModels();
-          availableModels = Array.isArray(listRaw) ? listRaw : listRaw?.models || listRaw;
+        const candidateIds = await listModelIds(ai);
+        availableModels = candidateIds.length ? candidateIds : FALLBACK_MODELS;
 
-          // Extract candidate model ids (flexible for different response shapes)
-          const candidateIds = [];
-          if (Array.isArray(availableModels)) {
-            for (const m of availableModels) {
-              if (typeof m === 'string') {
-                candidateIds.push(m);
-              } else if (m?.name) {
-                // name might be like "models/gemini-1.5"
-                const parts = String(m.name).split('/');
-                candidateIds.push(parts[parts.length - 1]);
-              } else if (m?.id) {
-                candidateIds.push(m.id);
-              } else if (m?.model) {
-                candidateIds.push(m.model);
-              }
-            }
-          }
+        const candidatesToTry = candidateIds.filter(id => id && id !== initialModelId);
+        if (!candidatesToTry.length) {
+          candidatesToTry.push(...FALLBACK_MODELS.filter(id => id !== initialModelId));
+        }
 
-          // Remove duplicates and the initial model id
-          const uniqueCandidates = Array.from(new Set(candidateIds)).filter(x => x && x !== initialModelId);
-
-          // Conservative fallback list if API didn't return usable candidates
-          const fallbackCandidates = [
-            'gemini-1.5',
-            'gemini-1.5-pro',
-            'gemini-1.5-mini',
-            'gemini-pro',
-            'text-bison-001',
-            'chat-bison-001',
-          ];
-
-          const candidatesToTry = uniqueCandidates.length ? uniqueCandidates : fallbackCandidates;
-
-          // Try each candidate in order until one succeeds; persist chosen model on success
-          for (const candidateId of candidatesToTry) {
+        for (const candidateId of candidatesToTry) {
+          try {
+            const tryResult = await generateWithModel(ai, candidateId, prompt);
+            const summaryText = await extractText(tryResult);
+            let writeResult = null;
             try {
-              const candidateModel = genAI.getGenerativeModel({ model: candidateId });
-              const tryResult = await candidateModel.generateContent(prompt);
-              // try to read response similarly to the primary path
-              const tryResponse = await tryResult?.response;
-              const tryText = typeof tryResponse?.text === 'function' ? await tryResponse.text() : (tryResponse?.output || tryResponse?.candidates || JSON.stringify(tryResponse));
-
-              // persist chosen model to .env.local
-              let writeResult = null;
-              try {
-                const envPath = path.resolve(process.cwd(), '.env.local');
-                let envContent = '';
-                try {
-                  envContent = await fsPromises.readFile(envPath, 'utf8');
-                } catch (e) {
-                  envContent = '';
-                }
-                if (envContent.includes('GENERATIVE_MODEL=')) {
-                  envContent = envContent.replace(/GENERATIVE_MODEL=.*/g, `GENERATIVE_MODEL=${candidateId}`);
-                } else {
-                  if (envContent && !envContent.endsWith('\n')) envContent += '\n';
-                  envContent += `GENERATIVE_MODEL=${candidateId}\n`;
-                }
-                await fsPromises.writeFile(envPath, envContent, 'utf8');
-                writeResult = { ok: true, path: '.env.local', model: candidateId };
-              } catch (writeErr) {
-                console.error('Failed to write .env.local for chosen candidate:', writeErr);
-                writeResult = { ok: false, error: String(writeErr) };
-              }
-
-              // success — return immediately with model and write info
-              return new Response(JSON.stringify({ summary: tryText, model: candidateId, writeResult }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-            } catch (candidateErr) {
-              console.warn('Candidate model failed:', candidateId, candidateErr);
-              continue; // try next candidate
+              writeResult = await persistChosenModel(candidateId);
+            } catch (writeErr) {
+              console.error('Failed to write .env.local for chosen candidate:', writeErr);
+              writeResult = { ok: false, error: String(writeErr) };
             }
+
+            return new Response(JSON.stringify({ summary: summaryText, model: candidateId, writeResult }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+          } catch (candidateErr) {
+            console.warn('Candidate model failed:', candidateId, candidateErr);
           }
         }
       } catch (listErr) {
@@ -127,27 +144,17 @@ export async function POST(request) {
       }), { status: 502, headers: { 'Content-Type': 'application/json' } });
     }
 
-    // Some client libraries return different shapes; attempt to read text safely
-    try {
-      const response = await result?.response;
-      const summaryText = typeof response?.text === 'function' ? await response.text() : (response?.output || response?.candidates || JSON.stringify(response));
-
-      return new Response(JSON.stringify({ summary: summaryText }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    } catch (readErr) {
-      console.error('Error reading model response:', readErr, 'raw result:', result);
-      return new Response(JSON.stringify({ error: 'Error reading model response', details: String(readErr), raw: result }), { status: 500, headers: { 'Content-Type': 'application/json' } });
-    }
-
+    const summaryText = await extractText(result);
+    return new Response(JSON.stringify({ summary: summaryText, model: initialModelId }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
   } catch (err) {
     console.error('AI generation error:', err);
     return new Response(JSON.stringify({ error: 'Failed to generate summary', details: String(err) }), { status: 500, headers: { 'Content-Type': 'application/json' } });
   }
 }
 
-// GET /co-pilot - list available models (helpful for choosing a working model id)
 export async function GET() {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
@@ -155,52 +162,14 @@ export async function GET() {
   }
 
   try {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    if (typeof genAI.listModels !== 'function') {
-      return new Response(JSON.stringify({ error: 'listModels() not available on client' }), { status: 501, headers: { 'Content-Type': 'application/json' } });
-    }
-
-    const listRaw = await genAI.listModels();
-    // Normalize common shapes into an array of candidate ids/names
-    let models = [];
-    if (Array.isArray(listRaw)) models = listRaw;
-    else if (Array.isArray(listRaw?.models)) models = listRaw.models;
-    else if (Array.isArray(listRaw?.model)) models = listRaw.model;
-    else models = [listRaw];
-
-    // Extract simple identifiers
-    const ids = models.map(m => {
-      if (!m) return null;
-      if (typeof m === 'string') return m;
-      if (m.id) return m.id;
-      if (m.name) return String(m.name).split('/').pop();
-      if (m.model) return m.model;
-      return JSON.stringify(m);
-    }).filter(Boolean);
-
-    // Auto-pick the first candidate model and persist to .env.local
+    const ai = new GoogleGenAI({ apiKey });
+    const ids = await listModelIds(ai);
     const chosenModel = ids[0] || null;
+
     let writeResult = null;
     if (chosenModel) {
       try {
-        const envPath = path.resolve(process.cwd(), '.env.local');
-        let envContent = '';
-        try {
-          envContent = await fsPromises.readFile(envPath, 'utf8');
-        } catch (e) {
-          // file may not exist yet; we'll create it
-          envContent = '';
-        }
-
-        if (envContent.includes('GENERATIVE_MODEL=')) {
-          envContent = envContent.replace(/GENERATIVE_MODEL=.*/g, `GENERATIVE_MODEL=${chosenModel}`);
-        } else {
-          if (envContent && !envContent.endsWith('\n')) envContent += '\n';
-          envContent += `GENERATIVE_MODEL=${chosenModel}\n`;
-        }
-
-        await fsPromises.writeFile(envPath, envContent, 'utf8');
-        writeResult = { ok: true, path: '.env.local', model: chosenModel };
+        writeResult = await persistChosenModel(chosenModel);
       } catch (writeErr) {
         console.error('Failed to write .env.local:', writeErr);
         writeResult = { ok: false, error: String(writeErr) };
