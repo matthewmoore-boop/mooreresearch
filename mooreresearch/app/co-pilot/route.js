@@ -96,7 +96,7 @@ export async function POST(request) {
       return new Response(JSON.stringify({ error: 'No content provided in request body (expected { content })' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
     }
 
-    const prompt = `You are an expert financial research analyst.\n\nThe following is the JSON content of a research report from a TipTap editor.\nYour task is to write a concise, professional executive summary of no more than three sentences. Focus on the investment thesis, key valuation points, and primary risks. Return ONLY the summary text.\n\nReport Content:\n${JSON.stringify(documentContent)}`;
+    const prompt = `You are an expert financial research analyst.\n\nThe following is the JSON content of a research report from a TipTap editor.\nYour task is to write a concise, professional executive summary of no more than three bullet points. Focus on the investment thesis, key valuation points, and primary risks. Return ONLY the summary text.\n\nReport Content:\n${JSON.stringify(documentContent)}`;
 
     let result;
     try {
