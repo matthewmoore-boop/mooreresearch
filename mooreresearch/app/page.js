@@ -34,6 +34,7 @@ import {
     MdTableChart,
     MdLink,
     MdSave,
+    MdSummarize,
 } from 'react-icons/md';
 
 
@@ -59,7 +60,7 @@ function parseContentJson(value) {
     return value;
 }
 
-function MenuBar({ editor, onSave }) {
+function MenuBar({ editor, onSave, onSummarize }) {
     if (!editor) return null;
 
     const buttonClass = (active) =>
@@ -129,6 +130,15 @@ function MenuBar({ editor, onSave }) {
             </button>
             <button
                 type="button"
+                className={buttonClass(false)}
+                onClick={() => onSummarize && onSummarize()}
+                title="Summarize"
+            >
+                <MdSummarize className="h-4 w-4" />
+                <span className="text-sm">Summarize</span>
+            </button>
+            <button
+                type="button"
                 onClick={onSave}
                 className="ml-auto bg-slate-900 hover:bg-slate-800 text-white font-semibold py-1 px-4 rounded-lg shadow-sm flex items-center gap-2"
                 title="Save to Database"
@@ -150,6 +160,8 @@ function CollaborativeEditor() {
         name: 'User ' + Math.floor(Math.random() * 100),
         color: getRandomColor(),
     });
+    const [summary, setSummary] = useState(null);
+    const [summarizing, setSummarizing] = useState(false);
 
     const extensions = useMemo(() => {
         const baseExtensions = [
@@ -309,13 +321,43 @@ function CollaborativeEditor() {
         alert('Document saved successfully!');
     };
 
+    const handleSummarize = async () => {
+        if (!editor) return;
+        setSummarizing(true);
+        setSummary(null);
+        try {
+            const resp = await fetch('/co-pilot', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content: editor.getJSON() }),
+            });
+            if (!resp.ok) {
+                const txt = await resp.text();
+                throw new Error(txt || 'Summarization failed');
+            }
+            const data = await resp.json();
+            setSummary(data.summary || 'No summary returned');
+        } catch (err) {
+            console.error('Summarize error', err);
+            setErrorMessage(err.message || 'Summarize failed');
+        } finally {
+            setSummarizing(false);
+        }
+    };
+
     return (
         <div className="max-w-4xl mx-auto mt-10 border border-gray-300 rounded-lg shadow-lg relative">
             {errorMessage ? (
                 <div className="p-6 text-red-700">{errorMessage}</div>
             ) : editor ? (
                 <div className="p-4">
-                    <MenuBar editor={editor} onSave={handleSave} />
+                    <MenuBar editor={editor} onSave={handleSave} onSummarize={handleSummarize} />
+                    {summary ? (
+                        <div className="mt-3 p-3 bg-gray-50 border rounded">
+                            <div className="font-semibold mb-2">AI Summary</div>
+                            <div className="whitespace-pre-line text-sm">{summary}</div>
+                        </div>
+                    ) : null}
                     <div className="p-5 min-h-[300px] bg-white rounded">
                         <EditorContent editor={editor} />
                     </div>

@@ -4,7 +4,7 @@ import './globals.css'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata = {
-  title: 'Apex Research Editor',
+  title: 'Moore Research Editor',
   description: 'Collaborative Research Platform',
 }
 
