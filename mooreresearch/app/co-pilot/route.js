@@ -12,7 +12,7 @@ export async function POST(request) {
 
   // 2. Initialize the AI client
   const genAI = new GoogleGenerativeAI(apiKey);
-  const initialModelId = process.env.GENERATIVE_MODEL || "gemini-1.5-flash";
+  const initialModelId = process.env.GENERATIVE_MODEL || "gemini-pro";
   let model = genAI.getGenerativeModel({ model: initialModelId });
 
   try {
