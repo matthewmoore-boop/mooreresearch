@@ -1,4 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import fsPromises from 'fs/promises';
+import path from 'path';
 
 // This is your new AI endpoint.
 export async function POST(request) {
@@ -140,7 +142,36 @@ export async function GET() {
       return JSON.stringify(m);
     }).filter(Boolean);
 
-    return new Response(JSON.stringify({ models: ids }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    // Auto-pick the first candidate model and persist to .env.local
+    const chosenModel = ids[0] || null;
+    let writeResult = null;
+    if (chosenModel) {
+      try {
+        const envPath = path.resolve(process.cwd(), '.env.local');
+        let envContent = '';
+        try {
+          envContent = await fsPromises.readFile(envPath, 'utf8');
+        } catch (e) {
+          // file may not exist yet; we'll create it
+          envContent = '';
+        }
+
+        if (envContent.includes('GENERATIVE_MODEL=')) {
+          envContent = envContent.replace(/GENERATIVE_MODEL=.*/g, `GENERATIVE_MODEL=${chosenModel}`);
+        } else {
+          if (envContent && !envContent.endsWith('\n')) envContent += '\n';
+          envContent += `GENERATIVE_MODEL=${chosenModel}\n`;
+        }
+
+        await fsPromises.writeFile(envPath, envContent, 'utf8');
+        writeResult = { ok: true, path: '.env.local', model: chosenModel };
+      } catch (writeErr) {
+        console.error('Failed to write .env.local:', writeErr);
+        writeResult = { ok: false, error: String(writeErr) };
+      }
+    }
+
+    return new Response(JSON.stringify({ models: ids, chosenModel, writeResult }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   } catch (err) {
     console.error('List models error:', err);
     return new Response(JSON.stringify({ error: 'Failed to list models', details: String(err) }), { status: 500, headers: { 'Content-Type': 'application/json' } });
