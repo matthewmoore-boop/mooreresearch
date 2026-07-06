@@ -62,16 +62,52 @@ export async function POST(request) {
           // Remove duplicates and the initial model id
           const uniqueCandidates = Array.from(new Set(candidateIds)).filter(x => x && x !== initialModelId);
 
-          // Try each candidate in order until one succeeds
-          for (const candidateId of uniqueCandidates) {
+          // Conservative fallback list if API didn't return usable candidates
+          const fallbackCandidates = [
+            'gemini-1.5',
+            'gemini-1.5-pro',
+            'gemini-1.5-mini',
+            'gemini-pro',
+            'text-bison-001',
+            'chat-bison-001',
+          ];
+
+          const candidatesToTry = uniqueCandidates.length ? uniqueCandidates : fallbackCandidates;
+
+          // Try each candidate in order until one succeeds; persist chosen model on success
+          for (const candidateId of candidatesToTry) {
             try {
               const candidateModel = genAI.getGenerativeModel({ model: candidateId });
               const tryResult = await candidateModel.generateContent(prompt);
               // try to read response similarly to the primary path
               const tryResponse = await tryResult?.response;
               const tryText = typeof tryResponse?.text === 'function' ? await tryResponse.text() : (tryResponse?.output || tryResponse?.candidates || JSON.stringify(tryResponse));
-              // success — return immediately
-              return new Response(JSON.stringify({ summary: tryText, model: candidateId }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+
+              // persist chosen model to .env.local
+              let writeResult = null;
+              try {
+                const envPath = path.resolve(process.cwd(), '.env.local');
+                let envContent = '';
+                try {
+                  envContent = await fsPromises.readFile(envPath, 'utf8');
+                } catch (e) {
+                  envContent = '';
+                }
+                if (envContent.includes('GENERATIVE_MODEL=')) {
+                  envContent = envContent.replace(/GENERATIVE_MODEL=.*/g, `GENERATIVE_MODEL=${candidateId}`);
+                } else {
+                  if (envContent && !envContent.endsWith('\n')) envContent += '\n';
+                  envContent += `GENERATIVE_MODEL=${candidateId}\n`;
+                }
+                await fsPromises.writeFile(envPath, envContent, 'utf8');
+                writeResult = { ok: true, path: '.env.local', model: candidateId };
+              } catch (writeErr) {
+                console.error('Failed to write .env.local for chosen candidate:', writeErr);
+                writeResult = { ok: false, error: String(writeErr) };
+              }
+
+              // success — return immediately with model and write info
+              return new Response(JSON.stringify({ summary: tryText, model: candidateId, writeResult }), { status: 200, headers: { 'Content-Type': 'application/json' } });
             } catch (candidateErr) {
               console.warn('Candidate model failed:', candidateId, candidateErr);
               continue; // try next candidate
