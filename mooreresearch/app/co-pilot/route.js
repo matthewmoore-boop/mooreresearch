@@ -108,3 +108,41 @@ export async function POST(request) {
     return new Response(JSON.stringify({ error: 'Failed to generate summary', details: String(err) }), { status: 500, headers: { 'Content-Type': 'application/json' } });
   }
 }
+
+// GET /co-pilot - list available models (helpful for choosing a working model id)
+export async function GET() {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return new Response(JSON.stringify({ error: 'GEMINI_API_KEY not configured' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+  }
+
+  try {
+    const genAI = new GoogleGenerativeAI(apiKey);
+    if (typeof genAI.listModels !== 'function') {
+      return new Response(JSON.stringify({ error: 'listModels() not available on client' }), { status: 501, headers: { 'Content-Type': 'application/json' } });
+    }
+
+    const listRaw = await genAI.listModels();
+    // Normalize common shapes into an array of candidate ids/names
+    let models = [];
+    if (Array.isArray(listRaw)) models = listRaw;
+    else if (Array.isArray(listRaw?.models)) models = listRaw.models;
+    else if (Array.isArray(listRaw?.model)) models = listRaw.model;
+    else models = [listRaw];
+
+    // Extract simple identifiers
+    const ids = models.map(m => {
+      if (!m) return null;
+      if (typeof m === 'string') return m;
+      if (m.id) return m.id;
+      if (m.name) return String(m.name).split('/').pop();
+      if (m.model) return m.model;
+      return JSON.stringify(m);
+    }).filter(Boolean);
+
+    return new Response(JSON.stringify({ models: ids }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  } catch (err) {
+    console.error('List models error:', err);
+    return new Response(JSON.stringify({ error: 'Failed to list models', details: String(err) }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+  }
+}
