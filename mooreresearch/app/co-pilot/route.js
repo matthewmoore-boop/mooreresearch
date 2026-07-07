@@ -79,6 +79,38 @@ async function persistChosenModel(modelId) {
   return { ok: true, path: '.env.local', model: modelId };
 }
 
+function stringifyContent(value) {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) {
+    return value.map(stringifyContent).filter(Boolean).join('\n');
+  }
+  if (value && typeof value === 'object') {
+    if (typeof value.text === 'string') return value.text;
+    if (Array.isArray(value.content)) return stringifyContent(value.content);
+    if (value.content && typeof value.content === 'object') return stringifyContent(value.content);
+    if (typeof value.attrs?.text === 'string') return value.attrs.text;
+  }
+  return '';
+}
+
+function buildPrompt(action, content, selectionText, selectionNodeType, selectionNode) {
+  const sourceText = selectionText || stringifyContent(content);
+  const nodeContext = selectionNodeType ? `Selected node type: ${selectionNodeType}\n${selectionNode ? JSON.stringify(selectionNode, null, 2) : ''}` : '';
+  const contextBlock = nodeContext ? `Context:\n${nodeContext}\n\n` : '';
+
+  switch (action) {
+    case 'improve':
+      return `You are an expert editor. Improve the clarity, flow, and grammar of the provided text while preserving the original meaning. Return ONLY the rewritten text.\n\n${contextBlock}Text:\n${sourceText}`;
+    case 'tone':
+      return `You are an expert editor. Rewrite the provided text in a more formal tone while preserving the original meaning. Return ONLY the rewritten text.\n\n${contextBlock}Text:\n${sourceText}`;
+    case 'table-commentary':
+      return `You are an expert financial research analyst. Create a concise commentary paragraph about the provided table, chart, or image content. Return ONLY the commentary text.\n\n${contextBlock}Content:\n${sourceText}`;
+    case 'summarize':
+    default:
+      return `You are an expert financial research analyst.\n\nThe following is the content of a research report from a TipTap editor.\nYour task is to write a concise, professional executive summary of no more than three bullet points. Focus on the investment thesis, key valuation points, and primary risks. Return ONLY the summary text.\n\nReport Content:\n${sourceText}`;
+  }
+}
+
 export async function POST(request) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
@@ -90,13 +122,17 @@ export async function POST(request) {
 
   try {
     const req = await request.json();
+    const action = req?.action || 'summarize';
     const documentContent = req?.content;
+    const selectionText = req?.selectionText;
+    const selectionNodeType = req?.selectedNodeType;
+    const selectionNode = req?.selectedNode;
 
-    if (!documentContent) {
-      return new Response(JSON.stringify({ error: 'No content provided in request body (expected { content })' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    if (!documentContent && !selectionText && !selectionNode) {
+      return new Response(JSON.stringify({ error: 'No content provided in request body (expected { content } or selection data)' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
     }
 
-    const prompt = `You are an expert financial research analyst.\n\nThe following is the JSON content of a research report from a TipTap editor.\nYour task is to write a concise, professional executive summary of no more than three bullet points. Focus on the investment thesis, key valuation points, and primary risks. Return ONLY the summary text.\n\nReport Content:\n${JSON.stringify(documentContent)}`;
+    const prompt = buildPrompt(action, documentContent, selectionText, selectionNodeType, selectionNode);
 
     let result;
     try {
@@ -117,7 +153,7 @@ export async function POST(request) {
         for (const candidateId of candidatesToTry) {
           try {
             const tryResult = await generateWithModel(ai, candidateId, prompt);
-            const summaryText = await extractText(tryResult);
+            const generatedText = await extractText(tryResult);
             let writeResult = null;
             try {
               writeResult = await persistChosenModel(candidateId);
@@ -126,7 +162,11 @@ export async function POST(request) {
               writeResult = { ok: false, error: String(writeErr) };
             }
 
-            return new Response(JSON.stringify({ summary: summaryText, model: candidateId, writeResult }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+            const responsePayload = action === 'summarize'
+              ? { summary: generatedText, model: candidateId, writeResult }
+              : { result: generatedText, model: candidateId, action, writeResult };
+
+            return new Response(JSON.stringify(responsePayload), { status: 200, headers: { 'Content-Type': 'application/json' } });
           } catch (candidateErr) {
             console.warn('Candidate model failed:', candidateId, candidateErr);
           }
@@ -144,14 +184,18 @@ export async function POST(request) {
       }), { status: 502, headers: { 'Content-Type': 'application/json' } });
     }
 
-    const summaryText = await extractText(result);
-    return new Response(JSON.stringify({ summary: summaryText, model: initialModelId }), {
+    const generatedText = await extractText(result);
+    const responsePayload = action === 'summarize'
+      ? { summary: generatedText, model: initialModelId }
+      : { result: generatedText, model: initialModelId, action };
+
+    return new Response(JSON.stringify(responsePayload), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (err) {
     console.error('AI generation error:', err);
-    return new Response(JSON.stringify({ error: 'Failed to generate summary', details: String(err) }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ error: 'Failed to generate response', details: String(err) }), { status: 500, headers: { 'Content-Type': 'application/json' } });
   }
 }
 

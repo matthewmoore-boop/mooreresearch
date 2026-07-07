@@ -60,18 +60,24 @@ function parseContentJson(value) {
     return value;
 }
 
-function MenuBar({ editor, onSave, onSummarize }) {
+function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen, coPilotLoading }) {
     if (!editor) return null;
 
     const buttonClass = (active) =>
-        `mr-2 mb-2 px-2 py-1 rounded border flex items-center gap-2 ${active ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`;
+        `mr-1 mb-1 p-2 rounded border flex items-center justify-center ${active ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`;
 
     const btn = (onClick, active, label, Icon) => (
         <button type="button" onClick={onClick} className={buttonClass(active)} title={label}>
             {Icon ? <Icon className="h-4 w-4" /> : null}
-            <span className="text-sm">{label}</span>
         </button>
     );
+
+    const aiOptions = [
+        { key: 'summarize', label: 'Summarize' },
+        { key: 'improve', label: 'Improve Writing' },
+        { key: 'tone', label: 'Change Tone' },
+        { key: 'table-commentary', label: 'Generate Table/Chart Commentary' },
+    ];
 
     return (
         <div className="flex flex-wrap gap-2 border-b pb-3 mb-3">
@@ -101,7 +107,6 @@ function MenuBar({ editor, onSave, onSummarize }) {
                 title="Image"
             >
                 <MdImage className="h-4 w-4" />
-                <span className="text-sm">Image</span>
             </button>
             <button
                 type="button"
@@ -112,7 +117,6 @@ function MenuBar({ editor, onSave, onSummarize }) {
                 title="Table"
             >
                 <MdTableChart className="h-4 w-4" />
-                <span className="text-sm">Table</span>
             </button>
             <button
                 type="button"
@@ -126,25 +130,42 @@ function MenuBar({ editor, onSave, onSummarize }) {
                 title="Link"
             >
                 <MdLink className="h-4 w-4" />
-                <span className="text-sm">Link</span>
             </button>
-            <button
-                type="button"
-                className={buttonClass(false)}
-                onClick={() => onSummarize && onSummarize()}
-                title="Summarize"
-            >
-                <MdSummarize className="h-4 w-4" />
-                <span className="text-sm">Summarize</span>
-            </button>
+            <div className="relative">
+                <button
+                    type="button"
+                    className={buttonClass(false)}
+                    onClick={() => setCopilotOpen((value) => !value)}
+                    title="AI Co-Pilot"
+                    disabled={coPilotLoading}
+                >
+                    <MdSummarize className="h-4 w-4" />
+                </button>
+                {copilotOpen ? (
+                    <div className="absolute z-20 mt-2 w-64 rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
+                        {aiOptions.map((option) => (
+                            <button
+                                key={option.key}
+                                type="button"
+                                className="flex w-full items-start rounded px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                                onClick={() => {
+                                    onCoPilotAction(option.key);
+                                    setCopilotOpen(false);
+                                }}
+                            >
+                                <span className="font-medium">{option.label}</span>
+                            </button>
+                        ))}
+                    </div>
+                ) : null}
+            </div>
             <button
                 type="button"
                 onClick={onSave}
-                className="ml-auto bg-slate-900 hover:bg-slate-800 text-white font-semibold py-1 px-4 rounded-lg shadow-sm flex items-center gap-2"
+                className="ml-auto bg-slate-900 hover:bg-slate-800 text-white font-semibold p-2 rounded-lg shadow-sm flex items-center justify-center"
                 title="Save to Database"
             >
                 <MdSave className="h-4 w-4" />
-                <span>Save to Database</span>
             </button>
         </div>
     );
@@ -160,8 +181,9 @@ function CollaborativeEditor() {
         name: 'User ' + Math.floor(Math.random() * 100),
         color: getRandomColor(),
     });
-    const [summary, setSummary] = useState(null);
-    const [summarizing, setSummarizing] = useState(false);
+    const [aiResult, setAiResult] = useState(null);
+    const [coPilotLoading, setCoPilotLoading] = useState(false);
+    const [copilotOpen, setCopilotOpen] = useState(false);
 
     const extensions = useMemo(() => {
         const baseExtensions = [
@@ -321,27 +343,51 @@ function CollaborativeEditor() {
         alert('Document saved successfully!');
     };
 
-    const handleSummarize = async () => {
+    const handleCoPilotAction = async (action) => {
         if (!editor) return;
-        setSummarizing(true);
-        setSummary(null);
+        setCoPilotLoading(true);
+        setAiResult(null);
+        setErrorMessage('');
+
         try {
+            const selection = editor.state.selection;
+            const selectionText = editor.state.doc.textBetween(selection.from, selection.to);
+            const selectedNode = selection.node ? selection.node.toJSON() : null;
+            const selectedNodeType = selection.node?.type?.name || null;
+
             const resp = await fetch('/co-pilot', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ content: editor.getJSON() }),
+                body: JSON.stringify({
+                    action,
+                    content: editor.getJSON(),
+                    selectionText,
+                    selectedNodeType,
+                    selectedNode,
+                }),
             });
             if (!resp.ok) {
                 const txt = await resp.text();
-                throw new Error(txt || 'Summarization failed');
+                throw new Error(txt || 'AI Co-Pilot request failed');
             }
             const data = await resp.json();
-            setSummary(data.summary || 'No summary returned');
+            const resultText = data.result || data.summary || 'No response returned';
+            setAiResult({ action, text: resultText });
+
+            if (action === 'improve' || action === 'tone') {
+                if (selectionText && selection.from !== selection.to) {
+                    editor.chain().focus().deleteSelection().insertContent(resultText).run();
+                } else {
+                    editor.chain().focus().insertContent(resultText).run();
+                }
+            } else if (action === 'table-commentary') {
+                editor.chain().focus().insertContent(`\n\n${resultText}`).run();
+            }
         } catch (err) {
-            console.error('Summarize error', err);
-            setErrorMessage(err.message || 'Summarize failed');
+            console.error('AI Co-Pilot error', err);
+            setErrorMessage(err.message || 'AI Co-Pilot request failed');
         } finally {
-            setSummarizing(false);
+            setCoPilotLoading(false);
         }
     };
 
@@ -351,11 +397,29 @@ function CollaborativeEditor() {
                 <div className="p-6 text-red-700">{errorMessage}</div>
             ) : editor ? (
                 <div className="p-4">
-                    <MenuBar editor={editor} onSave={handleSave} onSummarize={handleSummarize} />
-                    {summary ? (
+                    <MenuBar
+                        editor={editor}
+                        onSave={handleSave}
+                        onCoPilotAction={handleCoPilotAction}
+                        copilotOpen={copilotOpen}
+                        setCopilotOpen={setCopilotOpen}
+                        coPilotLoading={coPilotLoading}
+                    />
+                    {coPilotLoading ? (
+                        <div className="mb-3 text-sm text-slate-600">Generating AI response…</div>
+                    ) : null}
+                    {aiResult ? (
                         <div className="mt-3 p-3 bg-gray-50 border rounded">
-                            <div className="font-semibold mb-2">AI Summary</div>
-                            <div className="whitespace-pre-line text-sm">{summary}</div>
+                            <div className="font-semibold mb-2">
+                                {aiResult.action === 'summarize'
+                                    ? 'AI Summary'
+                                    : aiResult.action === 'improve'
+                                        ? 'Improved Writing'
+                                        : aiResult.action === 'tone'
+                                            ? 'Formal Tone Rewrite'
+                                            : 'Table/Chart Commentary'}
+                            </div>
+                            <div className="whitespace-pre-line text-sm">{aiResult.text}</div>
                         </div>
                     ) : null}
                     <div className="p-5 min-h-[300px] bg-white rounded">
