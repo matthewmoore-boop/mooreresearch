@@ -38,7 +38,7 @@ async function generateWithModel(ai, modelId, prompt) {
   return ai.models.generateContent({
     model: modelId,
     contents: prompt,
-    config: { maxOutputTokens: 250 },
+    config: { maxOutputTokens: 1000 },
   });
 }
 
