@@ -18,11 +18,31 @@ const DEFAULT_TEMPLATES = [
   },
 ];
 
+const TABLE_CANDIDATES = {
+  templates: ['document_templates'],
+  analysts: ['analysts', 'analyst', 'analyst_list', 'authors'],
+  documents: ['documents', 'document', 'notes', 'research_notes'],
+};
+
 function getRecordLabel(record, keys) {
   for (const key of keys) {
     if (record?.[key]) return record[key];
   }
   return 'Unknown';
+}
+
+async function fetchTableCandidates(tableKeys, select = '*') {
+  for (const table of tableKeys) {
+    const { data, error } = await supabase.from(table).select(select).limit(50);
+    if (error) {
+      if (error.code === '42P01' || error.message?.includes('relation') || error.message?.includes('does not exist')) {
+        continue;
+      }
+      return { table, data: null, error };
+    }
+    return { table, data: data || [], error: null };
+  }
+  return { table: null, data: null, error: new Error(`No matching table found: ${tableKeys.join(', ')}`) };
 }
 
 function getTemplateKey(template) {
@@ -39,6 +59,8 @@ export default function LandingPage() {
   const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [selectedCompany, setSelectedCompany] = useState(null);
   const [selectedAnalyst, setSelectedAnalyst] = useState(null);
+  const [companyTable, setCompanyTable] = useState(null);
+  const [companyFetchError, setCompanyFetchError] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -49,12 +71,12 @@ export default function LandingPage() {
 
   const fetchTemplates = async () => {
     setLoading(true);
-    const { data, error } = await supabase.from('templates').select('*');
-    if (error) {
-      console.warn('Unable to load templates from database:', error.message);
+    const result = await supabase.from('document_templates').select('*');
+    if (result.error) {
+      console.warn('Unable to load templates from database:', result.error.message);
       setTemplates(DEFAULT_TEMPLATES);
-    } else if (Array.isArray(data) && data.length > 0) {
-      setTemplates(data);
+    } else if (Array.isArray(result.data) && result.data.length > 0) {
+      setTemplates(result.data);
     } else {
       setTemplates(DEFAULT_TEMPLATES);
     }
@@ -62,41 +84,68 @@ export default function LandingPage() {
   };
 
   const fetchDocuments = async () => {
-    const { data, error } = await supabase
-      .from('documents')
-      .select('*')
-      .order('updated_at', { ascending: false })
-      .limit(20);
-
+    const { table, data, error } = await fetchTableCandidates(TABLE_CANDIDATES.documents);
     if (error) {
-      console.warn('Unable to load existing documents:', error.message);
+      console.warn('Unable to load existing documents from database:', error.message);
       setDocuments([]);
-    } else {
-      setDocuments(data || []);
+      return;
+    }
+
+    try {
+      const result = await supabase
+        .from(table)
+        .select('*')
+        .order('updated_at', { ascending: false })
+        .limit(20);
+
+      if (result.error) {
+        console.warn('Unable to load existing documents:', result.error.message);
+        setDocuments([]);
+      } else {
+        setDocuments(result.data || []);
+      }
+    } catch (err) {
+      console.warn('Unable to load existing documents:', err.message || err);
+      setDocuments([]);
     }
   };
 
   const fetchCompanies = async () => {
-    const { data, error } = await supabase.from('companies').select('*');
-    if (error) {
-      console.warn('Unable to load companies from database:', error.message);
+    setCompanyFetchError('');
+    const result = await supabase.from('companies').select('id,company_name');
+    if (result.error) {
+      console.warn('Unable to load companies from database:', result.error.message);
       setCompanies([]);
-    } else {
-      setCompanies(data || []);
+      setCompanyTable(null);
+      setCompanyFetchError(result.error.message);
+      return;
+    }
+
+    setCompanyTable('companies');
+    setCompanies(result.data || []);
+    if (!Array.isArray(result.data) || result.data.length === 0) {
+      setCompanyFetchError('No rows returned from companies table.');
     }
   };
 
   const fetchAnalysts = async (companyId) => {
-    const { data, error } = await supabase
-      .from('analysts')
+    const { table, data, error } = await fetchTableCandidates(TABLE_CANDIDATES.analysts);
+    if (error) {
+      console.warn('Unable to load analysts from database:', error.message);
+      setAnalysts([]);
+      return;
+    }
+
+    const result = await supabase
+      .from(table)
       .select('*')
       .eq('company_id', companyId);
 
-    if (error) {
-      console.warn('Unable to load analysts for company:', error.message);
+    if (result.error) {
+      console.warn('Unable to load analysts for company:', result.error.message);
       setAnalysts([]);
     } else {
-      setAnalysts(data || []);
+      setAnalysts(result.data || []);
     }
   };
 
@@ -310,6 +359,16 @@ export default function LandingPage() {
                     <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500">Select a template first.</div>
                   )}
                 </div>
+                {companyTable && (
+                  <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm text-slate-700">
+                    Using table: <span className="font-semibold">{companyTable}</span>
+                  </div>
+                )}
+                {companyFetchError ? (
+                  <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                    {companyFetchError}
+                  </div>
+                ) : null}
               </section>
 
               <section className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
