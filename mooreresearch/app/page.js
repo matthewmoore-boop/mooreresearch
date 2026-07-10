@@ -1,438 +1,370 @@
-"use client";
+'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useEditor, EditorContent } from '@tiptap/react';
-import StarterKit from '@tiptap/starter-kit';
-import Collaboration from '@tiptap/extension-collaboration';
-import Placeholder from '@tiptap/extension-placeholder';
-import Underline from '@tiptap/extension-underline';
-import Link from '@tiptap/extension-link';
-import TextAlign from '@tiptap/extension-text-align';
-import { TextStyle } from '@tiptap/extension-text-style';
-import Color from '@tiptap/extension-color';
-import Highlight from '@tiptap/extension-highlight';
-import Image from '@tiptap/extension-image';
-import { Table } from '@tiptap/extension-table';
-import TableRow from '@tiptap/extension-table-row';
-import TableCell from '@tiptap/extension-table-cell';
-import TableHeader from '@tiptap/extension-table-header';
-import CollaborationCursor from '@tiptap/extension-collaboration-cursor';
-import * as Y from 'yjs';
-import { WebsocketProvider } from 'y-websocket';
 import { createClient } from '@supabase/supabase-js';
-import {
-    MdFormatBold,
-    MdFormatItalic,
-    MdFormatStrikethrough,
-    MdFormatUnderlined,
-    MdFormatListBulleted,
-    MdFormatListNumbered,
-    MdFormatAlignLeft,
-    MdFormatAlignCenter,
-    MdFormatAlignRight,
-    MdImage,
-    MdTableChart,
-    MdLink,
-    MdSave,
-    MdSummarize,
-} from 'react-icons/md';
-
+import { useRouter } from 'next/navigation';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
-const colors = ['#958DF1', '#F98181', '#FBBC88', '#FAF594', '#70CFF8', '#94FADB', '#B9F18D'];
-const getRandomColor = () => colors[Math.floor(Math.random() * colors.length)];
-const DRAFT_STORAGE_KEY = 'mooreresearch-doc-draft';
-const DOCUMENT_ID_TO_LOAD = 'c63d1b04-aadf-4251-871a-bc5a7da82fe8';
+const DEFAULT_TEMPLATES = [
+  {
+    id: 'company_note',
+    name: 'Company Note',
+    template_key: 'company_note',
+    description: 'Create a research note for a public company.',
+  },
+];
 
-function parseContentJson(value) {
-    if (typeof value === 'string') {
-        try {
-            return JSON.parse(value);
-        } catch (error) {
-            console.warn('Unable to parse content_json from database', error);
-            return null;
-        }
+function getRecordLabel(record, keys) {
+  for (const key of keys) {
+    if (record?.[key]) return record[key];
+  }
+  return 'Unknown';
+}
+
+function getTemplateKey(template) {
+  return template?.template_key || template?.key || template?.id || String(template?.name || '').toLowerCase().replace(/\s+/g, '_');
+}
+
+export default function LandingPage() {
+  const router = useRouter();
+  const [view, setView] = useState('landing');
+  const [templates, setTemplates] = useState([]);
+  const [companies, setCompanies] = useState([]);
+  const [analysts, setAnalysts] = useState([]);
+  const [documents, setDocuments] = useState([]);
+  const [selectedTemplate, setSelectedTemplate] = useState(null);
+  const [selectedCompany, setSelectedCompany] = useState(null);
+  const [selectedAnalyst, setSelectedAnalyst] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    fetchTemplates();
+    fetchDocuments();
+  }, []);
+
+  const fetchTemplates = async () => {
+    setLoading(true);
+    const { data, error } = await supabase.from('templates').select('*');
+    if (error) {
+      console.warn('Unable to load templates from database:', error.message);
+      setTemplates(DEFAULT_TEMPLATES);
+    } else if (Array.isArray(data) && data.length > 0) {
+      setTemplates(data);
+    } else {
+      setTemplates(DEFAULT_TEMPLATES);
     }
-    return value;
-}
+    setLoading(false);
+  };
 
-function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen, coPilotLoading }) {
-    if (!editor) return null;
+  const fetchDocuments = async () => {
+    const { data, error } = await supabase
+      .from('documents')
+      .select('*')
+      .order('updated_at', { ascending: false })
+      .limit(20);
 
-    const buttonClass = (active) =>
-        `mr-1 mb-1 p-2 rounded border flex items-center justify-center ${active ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`;
+    if (error) {
+      console.warn('Unable to load existing documents:', error.message);
+      setDocuments([]);
+    } else {
+      setDocuments(data || []);
+    }
+  };
 
-    const btn = (onClick, active, label, Icon) => (
-        <button type="button" onClick={onClick} className={buttonClass(active)} title={label}>
-            {Icon ? <Icon className="h-4 w-4" /> : null}
-        </button>
-    );
+  const fetchCompanies = async () => {
+    const { data, error } = await supabase.from('companies').select('*');
+    if (error) {
+      console.warn('Unable to load companies from database:', error.message);
+      setCompanies([]);
+    } else {
+      setCompanies(data || []);
+    }
+  };
 
-    const aiOptions = [
-        { key: 'summarize', label: 'Summarize' },
-        { key: 'improve', label: 'Improve Writing' },
-        { key: 'tone', label: 'Change Tone' },
-        { key: 'table-commentary', label: 'Generate Table/Chart Commentary' },
-    ];
+  const fetchAnalysts = async (companyId) => {
+    const { data, error } = await supabase
+      .from('analysts')
+      .select('*')
+      .eq('company_id', companyId);
 
-    return (
-        <div className="flex flex-wrap gap-2 border-b pb-3 mb-3">
-            {btn(() => editor.chain().focus().toggleBold().run(), editor.isActive('bold'), 'Bold', MdFormatBold)}
-            {btn(() => editor.chain().focus().toggleItalic().run(), editor.isActive('italic'), 'Italic', MdFormatItalic)}
-            {btn(() => editor.chain().focus().toggleStrike().run(), editor.isActive('strike'), 'Strike', MdFormatStrikethrough)}
-            {btn(() => editor.chain().focus().toggleUnderline().run(), editor.isActive('underline'), 'Underline', MdFormatUnderlined)}
-            {btn(() => editor.chain().focus().toggleHeading({ level: 1 }).run(), editor.isActive('heading', { level: 1 }), 'H1')}
-            {btn(() => editor.chain().focus().toggleHeading({ level: 2 }).run(), editor.isActive('heading', { level: 2 }), 'H2')}
-            {btn(() => editor.chain().focus().setParagraph().run(), editor.isActive('paragraph'), 'Paragraph')}
-            {btn(() => editor.chain().focus().toggleBulletList().run(), editor.isActive('bulletList'), 'Bullet', MdFormatListBulleted)}
-            {btn(() => editor.chain().focus().toggleOrderedList().run(), editor.isActive('orderedList'), 'Numbered', MdFormatListNumbered)}
-            {btn(() => editor.chain().focus().toggleBlockquote().run(), editor.isActive('blockquote'), 'Quote')}
-            {btn(() => editor.chain().focus().setTextAlign('left').run(), editor.isActive({ textAlign: 'left' }), 'Left', MdFormatAlignLeft)}
-            {btn(() => editor.chain().focus().setTextAlign('center').run(), editor.isActive({ textAlign: 'center' }), 'Center', MdFormatAlignCenter)}
-            {btn(() => editor.chain().focus().setTextAlign('right').run(), editor.isActive({ textAlign: 'right' }), 'Right', MdFormatAlignRight)}
-            {btn(() => editor.chain().focus().toggleHighlight({ color: '#FCEF6D' }).run(), editor.isActive('highlight'), 'Highlight')}
-            <button
-                type="button"
-                className={buttonClass(false)}
-                onClick={() => {
-                    const url = window.prompt('Enter image URL');
-                    if (url) {
-                        editor.chain().focus().setImage({ src: url }).run();
-                    }
-                }}
-                title="Image"
-            >
-                <MdImage className="h-4 w-4" />
-            </button>
-            <button
-                type="button"
-                className={buttonClass(false)}
-                onClick={() => {
-                    editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
-                }}
-                title="Table"
-            >
-                <MdTableChart className="h-4 w-4" />
-            </button>
-            <button
-                type="button"
-                className={buttonClass(false)}
-                onClick={() => {
-                    const href = window.prompt('Enter URL');
-                    if (href) {
-                        editor.chain().focus().extendMarkRange('link').setLink({ href }).run();
-                    }
-                }}
-                title="Link"
-            >
-                <MdLink className="h-4 w-4" />
-            </button>
-            <div className="relative">
-                <button
-                    type="button"
-                    className={buttonClass(false)}
-                    onClick={() => setCopilotOpen((value) => !value)}
-                    title="AI Co-Pilot"
-                    disabled={coPilotLoading}
-                >
-                    <MdSummarize className="h-4 w-4" />
-                </button>
-                {copilotOpen ? (
-                    <div className="absolute z-20 mt-2 w-64 rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
-                        {aiOptions.map((option) => (
-                            <button
-                                key={option.key}
-                                type="button"
-                                className="flex w-full items-start rounded px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
-                                onClick={() => {
-                                    onCoPilotAction(option.key);
-                                    setCopilotOpen(false);
-                                }}
-                            >
-                                <span className="font-medium">{option.label}</span>
-                            </button>
-                        ))}
-                    </div>
-                ) : null}
-            </div>
-            <button
-                type="button"
-                onClick={onSave}
-                className="ml-auto bg-slate-900 hover:bg-slate-800 text-white font-semibold p-2 rounded-lg shadow-sm flex items-center justify-center"
-                title="Save to Database"
-            >
-                <MdSave className="h-4 w-4" />
-            </button>
-        </div>
-    );
-}
+    if (error) {
+      console.warn('Unable to load analysts for company:', error.message);
+      setAnalysts([]);
+    } else {
+      setAnalysts(data || []);
+    }
+  };
 
-function CollaborativeEditor() {
-    const ydoc = useMemo(() => new Y.Doc(), []);
-    const [docId, setDocId] = useState(null);
-    const [provider, setProvider] = useState(null);
-    const [loading, setLoading] = useState(true);
-    const [errorMessage, setErrorMessage] = useState('');
-    const [currentUser] = useState({
-        name: 'User ' + Math.floor(Math.random() * 100),
-        color: getRandomColor(),
-    });
-    const [aiResult, setAiResult] = useState(null);
-    const [coPilotLoading, setCoPilotLoading] = useState(false);
-    const [copilotOpen, setCopilotOpen] = useState(false);
+  const handleCreateFlow = async () => {
+    setView('create');
+    setSelectedTemplate(null);
+    setSelectedCompany(null);
+    setSelectedAnalyst(null);
+    setAnalysts([]);
+    await fetchCompanies();
+  };
 
-    const extensions = useMemo(() => {
-        const baseExtensions = [
-            StarterKit.configure({ history: false }),
-            Placeholder.configure({ placeholder: 'Start writing your research note...' }),
-            Collaboration.configure({ document: ydoc }),
-            Underline,
-            Link.configure({ openOnClick: false }),
-            TextAlign.configure({ types: ['heading', 'paragraph'] }),
-            TextStyle,
-            Color.configure({ types: ['textStyle'] }),
-            Highlight.configure({ multicolor: true }),
-            Image.configure({ inline: false, allowBase64: true }),
-            Table.configure({ resizable: true }),
-            TableRow,
-            TableHeader,
-            TableCell,
-        ];
+  const handleSelectTemplate = (template) => {
+    setSelectedTemplate(template);
+    setSelectedCompany(null);
+    setSelectedAnalyst(null);
+    setAnalysts([]);
+  };
 
-        if (provider) {
-            return [
-                ...baseExtensions.slice(0, 3),
-                CollaborationCursor.configure({ provider, user: currentUser }),
-                ...baseExtensions.slice(3),
-            ];
-        }
+  const handleSelectCompany = async (company) => {
+    setSelectedCompany(company);
+    setSelectedAnalyst(null);
+    await fetchAnalysts(company.id);
+  };
 
-        return baseExtensions;
-    }, [ydoc, provider, currentUser]);
+  const handleCreateDocument = async () => {
+    setError('');
 
-    const editor = useEditor({
-        extensions,
-        content: '<p>Loading editor...</p>',
-        editable: true,
-        onUpdate: ({ editor }) => {
-            const json = editor.getJSON();
-            try {
-                window.localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(json));
-            } catch (e) {
-                console.warn('Unable to save draft locally', e);
-            }
+    if (!selectedTemplate || !selectedCompany) {
+      setError('Please select a template and a company before creating a document.');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const templateKey = getTemplateKey(selectedTemplate);
+      const payload = {
+        template_key: templateKey,
+        company_id: selectedCompany.id,
+        analyst_id: selectedAnalyst?.id || null,
+        content_json: {
+          type: 'doc',
+          content: [
+            {
+              type: 'paragraph',
+              content: [
+                { type: 'text', text: 'Start writing your research note...' },
+              ],
+            },
+          ],
         },
-    });
+      };
 
-    useEffect(() => {
-        if (!editor) {
-            return;
+      const rpcResult = await supabase.rpc('create_document', {
+        p_template_key: payload.template_key,
+        p_company_id: payload.company_id,
+        p_author_ids: payload.analyst_id ? [payload.analyst_id] : [],
+      });
+
+      let newDocumentId = rpcResult?.data;
+
+      if (rpcResult.error) {
+        console.warn('create_document rpc failed, falling back to direct insert:', rpcResult.error.message);
+        const insertResult = await supabase.from('documents').insert(payload).select('id').single();
+        if (insertResult.error) {
+          throw insertResult.error;
         }
+        newDocumentId = insertResult.data?.id;
+      }
 
-        editor.setEditable(true);
-    }, [editor]);
+      if (!newDocumentId && rpcResult?.data?.id) {
+        newDocumentId = rpcResult.data.id;
+      }
 
-    useEffect(() => {
-        let providerInstance = null;
+      if (!newDocumentId) {
+        throw new Error('Unable to create a new document.');
+      }
 
-        async function initialize() {
-            let draft = null;
+      router.push(`/Editor/${newDocumentId}`);
+    } catch (createError) {
+      setError(createError.message || 'Failed to create document.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
-            if (typeof window !== 'undefined') {
-                try {
-                    const savedDraft = window.localStorage.getItem(DRAFT_STORAGE_KEY);
-                    draft = savedDraft ? JSON.parse(savedDraft) : null;
-                } catch (e) {
-                    console.warn('Unable to parse saved draft', e);
-                }
-            }
+  const handleOpenDocument = async (docId) => {
+    router.push(`/Editor/${docId}`);
+  };
 
-            const { data, error } = await supabase
-                .from('documents')
-                .select('id, content_json')
-                .eq('id', DOCUMENT_ID_TO_LOAD)
-                .single();
+  const selectedTemplateHasCompanies = useMemo(() => {
+    if (!selectedTemplate) return false;
+    const key = getTemplateKey(selectedTemplate);
+    return key === 'company_note' || key === 'company-note';
+  }, [selectedTemplate]);
 
-            if (error || !data) {
-                console.error('Failed to load document:', error);
-                setErrorMessage('Failed to load document.');
-                setLoading(false);
-                return;
-            }
+  return (
+    <div className="max-w-5xl mx-auto px-4 py-10 sm:px-6 lg:px-8">
+      <div className="space-y-6">
+        <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
+          <h1 className="text-3xl font-semibold tracking-tight text-slate-900">Moore Research</h1>
+          <p className="mt-3 text-slate-600">Create a new research note or open an existing document.</p>
 
-            setDocId(data.id);
+          <div className="mt-8 grid gap-4 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={handleCreateFlow}
+              className="rounded-2xl border border-slate-200 bg-slate-900 px-6 py-4 text-left text-white shadow-sm transition hover:bg-slate-800"
+            >
+              <p className="text-lg font-semibold">Create a new document</p>
+              <p className="mt-2 text-sm text-slate-300">Pick a template, select a company, then choose an analyst to continue.</p>
+            </button>
 
-            providerInstance = new WebsocketProvider(
-                'wss://demos.yjs.dev',
-                `mooreresearch-collab-room-${data.id}`,
-                ydoc
-            );
-            setProvider(providerInstance);
-
-            if (editor) {
-                const dbContent = parseContentJson(data.content_json) || '<p>Start typing...</p>';
-                editor.commands.setContent(dbContent);
-
-                if (draft && JSON.stringify(draft) !== JSON.stringify(dbContent)) {
-                    console.info('Local draft differs from database content; keeping database content on load.');
-                }
-            }
-
-            setLoading(false);
-        }
-
-        initialize();
-
-        return () => {
-            providerInstance?.destroy();
-        };
-    }, [editor, ydoc]);
-
-    useEffect(() => {
-        return () => {
-            ydoc.destroy();
-        };
-    }, [ydoc]);
-
-    const handleSave = async () => {
-        if (!editor) {
-            alert('Editor is not ready yet. Please wait a moment.');
-            return;
-        }
-
-        const saveId = docId || DOCUMENT_ID_TO_LOAD;
-        const json = editor.getJSON();
-        const payload = {
-            content_json: json,
-            updated_at: new Date().toISOString(),
-        };
-
-        let result = await supabase
-            .from('documents')
-            .update(payload)
-            .eq('id', saveId)
-            .select('id, content_json')
-            .single();
-
-        if (result.error) {
-            console.warn('Update failed, trying insert fallback', result.error);
-            result = await supabase.from('documents').insert({
-                id: saveId,
-                ...payload,
-            });
-        }
-
-        if (result.error) {
-            console.error('Save failed', result.error);
-            alert('Error saving document: ' + result.error.message);
-            return;
-        }
-
-        if (typeof window !== 'undefined') {
-            window.localStorage.removeItem(DRAFT_STORAGE_KEY);
-        }
-
-        if (!docId) {
-            setDocId(saveId);
-        }
-
-        alert('Document saved successfully!');
-    };
-
-    const handleCoPilotAction = async (action) => {
-        if (!editor) return;
-        setCoPilotLoading(true);
-        setAiResult(null);
-        setErrorMessage('');
-
-        try {
-            const selection = editor.state.selection;
-            const selectionText = editor.state.doc.textBetween(selection.from, selection.to);
-            const selectedNode = selection.node ? selection.node.toJSON() : null;
-            const selectedNodeType = selection.node?.type?.name || null;
-
-            const resp = await fetch('/co-pilot', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    action,
-                    content: editor.getJSON(),
-                    selectionText,
-                    selectedNodeType,
-                    selectedNode,
-                }),
-            });
-            if (!resp.ok) {
-                const txt = await resp.text();
-                throw new Error(txt || 'AI Co-Pilot request failed');
-            }
-            const data = await resp.json();
-            const resultText = data.result || data.summary || 'No response returned';
-            setAiResult({ action, text: resultText });
-
-            if (action === 'improve' || action === 'tone') {
-                if (selectionText && selection.from !== selection.to) {
-                    editor.chain().focus().deleteSelection().insertContent(resultText).run();
-                } else {
-                    editor.chain().focus().insertContent(resultText).run();
-                }
-            } else if (action === 'table-commentary') {
-                editor.chain().focus().insertContent(`\n\n${resultText}`).run();
-            }
-        } catch (err) {
-            console.error('AI Co-Pilot error', err);
-            setErrorMessage(err.message || 'AI Co-Pilot request failed');
-        } finally {
-            setCoPilotLoading(false);
-        }
-    };
-
-    return (
-        <div className="max-w-4xl mx-auto mt-10 border border-gray-300 rounded-lg shadow-lg relative">
-            {errorMessage ? (
-                <div className="p-6 text-red-700">{errorMessage}</div>
-            ) : editor ? (
-                <div className="p-4">
-                    <MenuBar
-                        editor={editor}
-                        onSave={handleSave}
-                        onCoPilotAction={handleCoPilotAction}
-                        copilotOpen={copilotOpen}
-                        setCopilotOpen={setCopilotOpen}
-                        coPilotLoading={coPilotLoading}
-                    />
-                    {coPilotLoading ? (
-                        <div className="mb-3 text-sm text-slate-600">Generating AI response…</div>
-                    ) : null}
-                    {aiResult ? (
-                        <div className="mt-3 p-3 bg-gray-50 border rounded">
-                            <div className="font-semibold mb-2">
-                                {aiResult.action === 'summarize'
-                                    ? 'AI Summary'
-                                    : aiResult.action === 'improve'
-                                        ? 'Improved Writing'
-                                        : aiResult.action === 'tone'
-                                            ? 'Formal Tone Rewrite'
-                                            : 'Table/Chart Commentary'}
-                            </div>
-                            <div className="whitespace-pre-line text-sm">{aiResult.text}</div>
-                        </div>
-                    ) : null}
-                    <div className="p-5 min-h-[300px] bg-white rounded">
-                        <EditorContent editor={editor} />
-                    </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-lg font-semibold text-slate-900">Open existing document</p>
+                  <p className="mt-2 text-sm text-slate-600">Open a recently edited research note.</p>
                 </div>
-            ) : (
-                <div className="p-6">Loading editor...</div>
-            )}
-        </div>
-    );
-}
+              </div>
 
-export default function Page() {
-    return <CollaborativeEditor />;
+              <div className="mt-5 space-y-3">
+                {documents.length > 0 ? (
+                  documents.map((doc) => (
+                    <button
+                      key={doc.id}
+                      type="button"
+                      onClick={() => handleOpenDocument(doc.id)}
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left text-sm font-medium text-slate-900 shadow-sm transition hover:border-slate-300"
+                    >
+                      <div>{getRecordLabel(doc, ['title', 'name', 'document_name', 'id'])}</div>
+                      {doc.updated_at ? <div className="text-xs text-slate-500">Updated {new Date(doc.updated_at).toLocaleDateString()}</div> : null}
+                    </button>
+                  ))
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500">No existing documents found.</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {view === 'create' ? (
+          <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-2xl font-semibold text-slate-900">Create a new document</h2>
+                <p className="mt-2 text-sm text-slate-600">Select the template and company you want, then choose an analyst to start.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setView('landing')}
+                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
+              >
+                Back
+              </button>
+            </div>
+
+            <div className="mt-8 grid gap-6 lg:grid-cols-3">
+              <section className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+                <h3 className="text-lg font-semibold text-slate-900">1. Templates</h3>
+                <p className="mt-2 text-sm text-slate-600">Choose a template from the database.</p>
+                <div className="mt-4 space-y-3">
+                  {loading && templates.length === 0 ? (
+                    <div className="text-sm text-slate-500">Loading templates…</div>
+                  ) : (
+                    templates.map((template) => {
+                      const label = getRecordLabel(template, ['name', 'template_name', 'id']);
+                      const isSelected = selectedTemplate?.id === template.id;
+                      return (
+                        <button
+                          key={template.id || label}
+                          type="button"
+                          onClick={() => handleSelectTemplate(template)}
+                          className={`w-full rounded-2xl px-4 py-3 text-left text-sm font-medium transition ${isSelected ? 'border-slate-900 bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-900 hover:border-slate-300'}`}
+                        >
+                          <div>{label}</div>
+                          {template.description ? <div className="mt-1 text-xs text-slate-500">{template.description}</div> : null}
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </section>
+
+              <section className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+                <h3 className="text-lg font-semibold text-slate-900">2. Companies</h3>
+                <p className="mt-2 text-sm text-slate-600">Select the company for this note.</p>
+                <div className="mt-4 space-y-3">
+                  {selectedTemplate ? (
+                    companies.length > 0 ? (
+                      companies.map((company) => {
+                        const label = getRecordLabel(company, ['company_name', 'name', 'title', 'id']);
+                        const isSelected = selectedCompany?.id === company.id;
+                        return (
+                          <button
+                            key={company.id}
+                            type="button"
+                            onClick={() => handleSelectCompany(company)}
+                            className={`w-full rounded-2xl px-4 py-3 text-left text-sm font-medium transition ${isSelected ? 'border-slate-900 bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-900 hover:border-slate-300'}`}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })
+                    ) : (
+                      <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500">No companies found in the database.</div>
+                    )
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500">Select a template first.</div>
+                  )}
+                </div>
+              </section>
+
+              <section className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+                <h3 className="text-lg font-semibold text-slate-900">3. Analysts</h3>
+                <p className="mt-2 text-sm text-slate-600">Pick an analyst if available, then create the document.</p>
+                <div className="mt-4 space-y-3">
+                  {selectedCompany ? (
+                    analysts.length > 0 ? (
+                      analysts.map((analyst) => {
+                        const label = getRecordLabel(analyst, ['name', 'analyst_name', 'email', 'id']);
+                        const isSelected = selectedAnalyst?.id === analyst.id;
+                        return (
+                          <button
+                            key={analyst.id}
+                            type="button"
+                            onClick={() => setSelectedAnalyst(analyst)}
+                            className={`w-full rounded-2xl px-4 py-3 text-left text-sm font-medium transition ${isSelected ? 'border-slate-900 bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-900 hover:border-slate-300'}`}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })
+                    ) : (
+                      <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500">No analysts found for the selected company.</div>
+                    )
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500">Select a company first.</div>
+                  )}
+                </div>
+              </section>
+            </div>
+
+            <div className="mt-8 rounded-3xl border border-slate-200 bg-slate-900 p-6 text-white shadow-sm">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-lg font-semibold">Ready to create?</p>
+                  <p className="mt-1 text-sm text-slate-300">Your new document will open in the editor when created.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCreateDocument}
+                  disabled={loading || !selectedTemplate || !selectedCompany}
+                  className="inline-flex items-center justify-center rounded-2xl bg-white px-6 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {loading ? 'Creating...' : 'Create Document'}
+                </button>
+              </div>
+              {selectedTemplate ? <p className="mt-3 text-sm text-slate-300">Template: {getRecordLabel(selectedTemplate, ['name', 'id'])}</p> : null}
+              {selectedCompany ? <p className="mt-1 text-sm text-slate-300">Company: {getRecordLabel(selectedCompany, ['company_name', 'name', 'id'])}</p> : null}
+              {selectedAnalyst ? <p className="mt-1 text-sm text-slate-300">Analyst: {getRecordLabel(selectedAnalyst, ['name', 'analyst_name', 'email', 'id'])}</p> : null}
+              {error ? <p className="mt-3 text-sm text-red-300">{error}</p> : null}
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
 }
