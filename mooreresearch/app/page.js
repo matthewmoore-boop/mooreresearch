@@ -61,6 +61,7 @@ export default function LandingPage() {
   const [selectedAnalyst, setSelectedAnalyst] = useState(null);
   const [companyTable, setCompanyTable] = useState(null);
   const [companyFetchError, setCompanyFetchError] = useState('');
+  const [templateFetchError, setTemplateFetchError] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -71,14 +72,17 @@ export default function LandingPage() {
 
   const fetchTemplates = async () => {
     setLoading(true);
+    setTemplateFetchError('');
     const result = await supabase.from('document_templates').select('*');
     if (result.error) {
       console.warn('Unable to load templates from database:', result.error.message);
       setTemplates(DEFAULT_TEMPLATES);
+      setTemplateFetchError(result.error.message);
     } else if (Array.isArray(result.data) && result.data.length > 0) {
       setTemplates(result.data);
     } else {
-      setTemplates(DEFAULT_TEMPLATES);
+      setTemplates([]);
+      setTemplateFetchError('No document_templates rows found.');
     }
     setLoading(false);
   };
@@ -312,7 +316,7 @@ export default function LandingPage() {
                 <div className="mt-4 space-y-3">
                   {loading && templates.length === 0 ? (
                     <div className="text-sm text-slate-500">Loading templates…</div>
-                  ) : (
+                  ) : templates.length > 0 ? (
                     templates.map((template) => {
                       const label = getRecordLabel(template, ['name', 'template_name', 'id']);
                       const isSelected = selectedTemplate?.id === template.id;
@@ -328,6 +332,11 @@ export default function LandingPage() {
                         </button>
                       );
                     })
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500">
+                      No templates found in document_templates.
+                      {templateFetchError ? <div className="mt-2 text-sm text-red-600">{templateFetchError}</div> : null}
+                    </div>
                   )}
                 </div>
               </section>
@@ -336,7 +345,9 @@ export default function LandingPage() {
                 <h3 className="text-lg font-semibold text-slate-900">2. Companies</h3>
                 <p className="mt-2 text-sm text-slate-600">Select the company for this note.</p>
                 <div className="mt-4 space-y-3">
-                  {selectedTemplate ? (
+                  {loading && templates.length === 0 ? (
+                    <div className="text-sm text-slate-500">Loading companies…</div>
+                  ) : selectedTemplate ? (
                     companies.length > 0 ? (
                       companies.map((company) => {
                         const label = getRecordLabel(company, ['company_name', 'name', 'title', 'id']);
