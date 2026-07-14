@@ -20,7 +20,7 @@ const DEFAULT_TEMPLATES = [
 
 const TABLE_CANDIDATES = {
   templates: ['document_templates'],
-  analysts: ['analysts', 'analyst', 'analyst_list', 'authors'],
+  analysts: ['authors', 'analyst', 'analyst_list', 'authors'],
   documents: ['documents', 'document', 'notes', 'research_notes'],
 };
 
@@ -58,7 +58,7 @@ export default function LandingPage() {
   const [documents, setDocuments] = useState([]);
   const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [selectedCompany, setSelectedCompany] = useState(null);
-  const [selectedAnalyst, setSelectedAnalyst] = useState(null);
+  const [selectedAnalysts, setSelectedAnalysts] = useState([]);
   const [companyTable, setCompanyTable] = useState(null);
   const [companyFetchError, setCompanyFetchError] = useState('');
   const [templateFetchError, setTemplateFetchError] = useState('');
@@ -133,31 +133,33 @@ export default function LandingPage() {
   };
 
   const fetchAnalysts = async (companyId) => {
-    const { table, data, error } = await fetchTableCandidates(TABLE_CANDIDATES.analysts);
-    if (error) {
-      console.warn('Unable to load analysts from database:', error.message);
+    const primaryResult = await supabase.rpc('get_analysts_for_company', {
+      p_company_id: companyId,
+    });
+
+    if (!primaryResult.error) {
+      setAnalysts(primaryResult.data || []);
+      return;
+    }
+
+    const fallbackResult = await supabase.rpc('get_analysts_for_company', {
+      company_id: companyId,
+    });
+
+    if (fallbackResult.error) {
+      console.warn('Unable to load analysts for company:', fallbackResult.error.message || primaryResult.error.message);
       setAnalysts([]);
       return;
     }
 
-    const result = await supabase
-      .from(table)
-      .select('*')
-      .eq('company_id', companyId);
-
-    if (result.error) {
-      console.warn('Unable to load analysts for company:', result.error.message);
-      setAnalysts([]);
-    } else {
-      setAnalysts(result.data || []);
-    }
+    setAnalysts(fallbackResult.data || []);
   };
 
   const handleCreateFlow = async () => {
     setView('create');
     setSelectedTemplate(null);
     setSelectedCompany(null);
-    setSelectedAnalyst(null);
+    setSelectedAnalysts([]);
     setCompanies([]);
     setAnalysts([]);
   };
@@ -165,15 +167,25 @@ export default function LandingPage() {
   const handleSelectTemplate = async (template) => {
     setSelectedTemplate(template);
     setSelectedCompany(null);
-    setSelectedAnalyst(null);
+    setSelectedAnalysts([]);
     setAnalysts([]);
     await fetchCompanies();
   };
 
   const handleSelectCompany = async (company) => {
     setSelectedCompany(company);
-    setSelectedAnalyst(null);
+    setSelectedAnalysts([]);
     await fetchAnalysts(company.id);
+  };
+
+  const handleToggleAnalyst = (analyst) => {
+    setSelectedAnalysts((prev) => {
+      const exists = prev.some((selected) => selected.id === analyst.id);
+      if (exists) {
+        return prev.filter((selected) => selected.id !== analyst.id);
+      }
+      return [...prev, analyst];
+    });
   };
 
   const handleCreateDocument = async () => {
@@ -191,7 +203,7 @@ export default function LandingPage() {
       const payload = {
         template_key: templateKey,
         company_id: selectedCompany.id,
-        analyst_id: selectedAnalyst?.id || null,
+        analyst_id: selectedAnalysts[0]?.id || null,
         content_json: {
           type: 'doc',
           content: [
@@ -208,7 +220,7 @@ export default function LandingPage() {
       const rpcResult = await supabase.rpc('create_document', {
         p_template_key: payload.template_key,
         p_company_id: payload.company_id,
-        p_author_ids: payload.analyst_id ? [payload.analyst_id] : [],
+        p_author_ids: selectedAnalysts.map((analyst) => analyst.id),
       });
 
       let newDocumentId = rpcResult?.data;
@@ -247,6 +259,30 @@ export default function LandingPage() {
     const key = getTemplateKey(selectedTemplate);
     return key === 'company_note' || key === 'company-note';
   }, [selectedTemplate]);
+
+  const sortedTemplates = useMemo(() => {
+    return [...templates].sort((a, b) => {
+      const labelA = getRecordLabel(a, ['display_name', 'name', 'template_name', 'id']).toLowerCase();
+      const labelB = getRecordLabel(b, ['display_name', 'name', 'template_name', 'id']).toLowerCase();
+      return labelA.localeCompare(labelB);
+    });
+  }, [templates]);
+
+  const sortedCompanies = useMemo(() => {
+    return [...companies].sort((a, b) => {
+      const labelA = getRecordLabel(a, ['company_name', 'name', 'title', 'id']).toLowerCase();
+      const labelB = getRecordLabel(b, ['company_name', 'name', 'title', 'id']).toLowerCase();
+      return labelA.localeCompare(labelB);
+    });
+  }, [companies]);
+
+  const sortedAnalysts = useMemo(() => {
+    return [...analysts].sort((a, b) => {
+      const labelA = getRecordLabel(a, ['name', 'analyst_name', 'email', 'id']).toLowerCase();
+      const labelB = getRecordLabel(b, ['name', 'analyst_name', 'email', 'id']).toLowerCase();
+      return labelA.localeCompare(labelB);
+    });
+  }, [analysts]);
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-10 sm:px-6 lg:px-8">
@@ -318,7 +354,7 @@ export default function LandingPage() {
                   {loading && templates.length === 0 ? (
                     <div className="text-sm text-slate-500">Loading templates…</div>
                   ) : templates.length > 0 ? (
-                    templates.map((template) => {
+                    sortedTemplates.map((template) => {
                       const label = getRecordLabel(template, ['display_name', 'name', 'template_name', 'id']);
                       const isSelected = selectedTemplate?.id === template.id;
                       return (
@@ -348,7 +384,7 @@ export default function LandingPage() {
                   <p className="mt-2 text-sm text-slate-600">Select the company for this note.</p>
                   <div className="mt-4 space-y-3">
                     {companies.length > 0 ? (
-                      companies.map((company) => {
+                      sortedCompanies.map((company) => {
                         const label = getRecordLabel(company, ['company_name', 'name', 'title', 'id']);
                         const isSelected = selectedCompany?.id === company.id;
                         return (
@@ -385,14 +421,14 @@ export default function LandingPage() {
                   <p className="mt-2 text-sm text-slate-600">Pick an analyst if available, then create the document.</p>
                   <div className="mt-4 space-y-3">
                     {analysts.length > 0 ? (
-                      analysts.map((analyst) => {
+                      sortedAnalysts.map((analyst) => {
                         const label = getRecordLabel(analyst, ['name', 'analyst_name', 'email', 'id']);
-                        const isSelected = selectedAnalyst?.id === analyst.id;
+                        const isSelected = selectedAnalysts.some((selected) => selected.id === analyst.id);
                         return (
                           <button
                             key={analyst.id}
                             type="button"
-                            onClick={() => setSelectedAnalyst(analyst)}
+                            onClick={() => handleToggleAnalyst(analyst)}
                             className={`w-full rounded-2xl px-4 py-3 text-left text-sm font-medium transition ${isSelected ? 'border-slate-900 bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-900 hover:border-slate-300'}`}
                           >
                             {label}
@@ -424,7 +460,11 @@ export default function LandingPage() {
               </div>
               {selectedTemplate ? <p className="mt-3 text-sm text-slate-300">Template: {getRecordLabel(selectedTemplate, ['display_name', 'name', 'id'])}</p> : null}
               {selectedCompany ? <p className="mt-1 text-sm text-slate-300">Company: {getRecordLabel(selectedCompany, ['company_name', 'name', 'id'])}</p> : null}
-              {selectedAnalyst ? <p className="mt-1 text-sm text-slate-300">Analyst: {getRecordLabel(selectedAnalyst, ['name', 'analyst_name', 'email', 'id'])}</p> : null}
+              {selectedAnalysts.length > 0 ? (
+                <p className="mt-1 text-sm text-slate-300">
+                  Analysts: {selectedAnalysts.map((analyst) => getRecordLabel(analyst, ['name', 'analyst_name', 'email', 'id'])).join(', ')}
+                </p>
+              ) : null}
               {error ? <p className="mt-3 text-sm text-red-300">{error}</p> : null}
             </div>
           </div>
