@@ -215,51 +215,33 @@ export default function LandingPage() {
 
     try {
       const templateKey = getTemplateKey(selectedTemplate);
-     
-      // Get the current user's ID to set as the author
-      const { data: { testuser, error: userError } } = await supabase
-      .from('users')
-      .select('id')
-      .limit(1)
-      .single();
-
-      if (userError || !testUser) {
-        throw new Error("Could not find a test user to assign as author. Please ensure a user exists in the 'users' table.");
-      }}
-      const user = testUser;
-      //if (!user) throw new Error("You must be logged in to create a document.");
-
-      // Prepare the payload for our RPC function
-      const rpcPayload = {
-        p_template_key: templateKey,
-        p_company_id: selectedCompany.id,
-        // For now, we'll just pass the current user as the author.
-        // We can add co-author logic later.
-        p_author_ids: [user.id]
+      const insertPayload = {
+        template_key: templateKey,
+        company_id: selectedCompany.id,
+        author_id: selectedAnalysts[0]?.id || null,
+        title: `Draft for ${selectedCompany.company_name || 'Selected Company'}`,
+        content_json: {
+          type: 'doc',
+          content: [
+            {
+              type: 'paragraph',
+              content: [{ type: 'text', text: 'Start writing your research note...' }],
+            },
+          ],
+        },
       };
 
-      // Call our database function
-      const { data: newDocId, error } = await supabase.rpc('create_document', rpcPayload);
+      const { data: insertData, error: insertError } = await supabase
+        .from('documents')
+        .insert(insertPayload)
+        .select('id')
+        .single();
 
-      if (error) {
-        // If the RPC fails, try a direct insert as a fallback (for debugging)
-        console.warn('RPC failed, trying direct insert. Error:', error.message);
-       
-        const insertPayload = {
-            template_key: templateKey,
-            company_id: selectedCompany.id,
-            author_id: user.id,
-            title: `Draft for ${selectedCompany.company_name}`,
-            content_json: {} // Let the DB function handle this
-        };
-        const { data: insertData, error: insertError } = await supabase.from('documents').insert(insertPayload).select('id').single();
-
-        if (insertError) throw insertError;
-        router.push(`/editor/${insertData.id}`);
-
-      } else {
-         router.push(`/editor/${newDocId}`);
+      if (insertError) {
+        throw insertError;
       }
+
+      router.push(`/Editor/${insertData.id}`);
 
     } catch (createError) {
       setError(createError.message || 'Failed to create document.');
