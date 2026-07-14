@@ -141,58 +141,32 @@ export default function LandingPage() {
   };
 
   const fetchAnalysts = async (companyId) => {
+    setAnalysts([]); // Start with a clean slate
     setAnalystFetchError('');
 
-    const rpcArgCandidates = [
-      { p_company_id: companyId },
-      { company_id: companyId },
-      { p_company: companyId },
-      { companyId },
-    ];
-
-    for (const rpcArgs of rpcArgCandidates) {
-      const rpcResult = await supabase.rpc('get_analysts_for_company', rpcArgs);
-      if (rpcResult.error) {
-        continue;
-      }
-
-      const rpcRows = normalizeRpcRows(rpcResult.data);
-      if (rpcRows.length > 0) {
-        setAnalysts(rpcRows);
-        return;
-      }
-    }
-
-    const tableResult = await fetchTableCandidates(TABLE_CANDIDATES.analysts);
-    if (tableResult.error || !tableResult.table) {
-      setAnalysts([]);
-      setAnalystFetchError('Could not load analysts from get_analysts_for_company.');
+    if (!companyId) {
       return;
     }
 
-    const candidateColumns = ['company_id', 'companyid', 'organization_id', 'org_id'];
-    for (const column of candidateColumns) {
-      const result = await supabase
-        .from(tableResult.table)
-        .select('*')
-        .eq(column, companyId)
-        .limit(100);
+    // Directly call the database function we created. This is the only logic we need.
+    const { data, error } = await supabase.rpc('get_analysts_for_company', {
+      p_company_id: companyId
+    });
 
-      if (result.error) {
-        if (result.error.code === '42703' || result.error.message?.toLowerCase().includes('column')) {
-          continue;
-        }
-        continue;
-      }
-
-      if (Array.isArray(result.data) && result.data.length > 0) {
-        setAnalysts(result.data);
-        return;
-      }
+    if (error) {
+      // If the RPC call itself fails, show a specific error.
+      console.error('RPC Error fetching analysts:', error);
+      setAnalystFetchError(`Error fetching analysts: ${error.message}`);
+      return;
     }
 
-    setAnalysts([]);
-    setAnalystFetchError('No analysts were returned by get_analysts_for_company for this company.');
+    if (data && data.length > 0) {
+      // Success! We found analysts.
+      setAnalysts(data);
+    } else {
+      // The RPC call succeeded but returned no rows.
+      setAnalystFetchError('No analysts found for the selected company.');
+    }
   };
 
   const handleCreateFlow = async () => {
