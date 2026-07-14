@@ -219,7 +219,7 @@ export default function LandingPage() {
       const payload = {
         template_key: templateKey,
         company_id: selectedCompany.id,
-        analyst_id: selectedAnalysts[0]?.id || null,
+        author_id: selectedAnalysts[0]?.id || null,
         content_json: {
           type: 'doc',
           content: [
