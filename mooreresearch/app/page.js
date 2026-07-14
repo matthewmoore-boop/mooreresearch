@@ -217,8 +217,17 @@ export default function LandingPage() {
       const templateKey = getTemplateKey(selectedTemplate);
      
       // Get the current user's ID to set as the author
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("You must be logged in to create a document.");
+      const { data: { testuser, error: userError } } = await supabase
+      .from('users')
+      .select('id')
+      .limit(1)
+      .single();
+
+      if (userError || !testUser) {
+        throw new Error("Could not find a test user to assign as author. Please ensure a user exists in the 'users' table.");
+      }}
+      const user = testUser;
+      //if (!user) throw new Error("You must be logged in to create a document.");
 
       // Prepare the payload for our RPC function
       const rpcPayload = {
