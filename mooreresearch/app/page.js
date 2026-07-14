@@ -20,7 +20,7 @@ const DEFAULT_TEMPLATES = [
 
 const TABLE_CANDIDATES = {
   templates: ['document_templates'],
-  analysts: ['authors', 'analyst', 'analyst_list', 'authors'],
+  analysts: ['analysts', 'authors', 'analyst', 'analyst_list'],
   documents: ['documents', 'document', 'notes', 'research_notes'],
 };
 
@@ -49,6 +49,13 @@ function getTemplateKey(template) {
   return template?.template_key || template?.key || template?.id || String(template?.name || '').toLowerCase().replace(/\s+/g, '_');
 }
 
+function normalizeRpcRows(data) {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.data)) return data.data;
+  if (Array.isArray(data?.get_analysts_for_company)) return data.get_analysts_for_company;
+  return [];
+}
+
 export default function LandingPage() {
   const router = useRouter();
   const [view, setView] = useState('landing');
@@ -62,6 +69,7 @@ export default function LandingPage() {
   const [companyTable, setCompanyTable] = useState(null);
   const [companyFetchError, setCompanyFetchError] = useState('');
   const [templateFetchError, setTemplateFetchError] = useState('');
+  const [analystFetchError, setAnalystFetchError] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -133,26 +141,58 @@ export default function LandingPage() {
   };
 
   const fetchAnalysts = async (companyId) => {
-    const primaryResult = await supabase.rpc('get_analysts_for_company', {
-      p_company_id: companyId,
-    });
+    setAnalystFetchError('');
 
-    if (!primaryResult.error) {
-      setAnalysts(primaryResult.data || []);
-      return;
+    const rpcArgCandidates = [
+      { p_company_id: companyId },
+      { company_id: companyId },
+      { p_company: companyId },
+      { companyId },
+    ];
+
+    for (const rpcArgs of rpcArgCandidates) {
+      const rpcResult = await supabase.rpc('get_analysts_for_company', rpcArgs);
+      if (rpcResult.error) {
+        continue;
+      }
+
+      const rpcRows = normalizeRpcRows(rpcResult.data);
+      if (rpcRows.length > 0) {
+        setAnalysts(rpcRows);
+        return;
+      }
     }
 
-    const fallbackResult = await supabase.rpc('get_analysts_for_company', {
-      company_id: companyId,
-    });
-
-    if (fallbackResult.error) {
-      console.warn('Unable to load analysts for company:', fallbackResult.error.message || primaryResult.error.message);
+    const tableResult = await fetchTableCandidates(TABLE_CANDIDATES.analysts);
+    if (tableResult.error || !tableResult.table) {
       setAnalysts([]);
+      setAnalystFetchError('Could not load analysts from get_analysts_for_company.');
       return;
     }
 
-    setAnalysts(fallbackResult.data || []);
+    const candidateColumns = ['company_id', 'companyid', 'organization_id', 'org_id'];
+    for (const column of candidateColumns) {
+      const result = await supabase
+        .from(tableResult.table)
+        .select('*')
+        .eq(column, companyId)
+        .limit(100);
+
+      if (result.error) {
+        if (result.error.code === '42703' || result.error.message?.toLowerCase().includes('column')) {
+          continue;
+        }
+        continue;
+      }
+
+      if (Array.isArray(result.data) && result.data.length > 0) {
+        setAnalysts(result.data);
+        return;
+      }
+    }
+
+    setAnalysts([]);
+    setAnalystFetchError('No analysts were returned by get_analysts_for_company for this company.');
   };
 
   const handleCreateFlow = async () => {
@@ -162,6 +202,7 @@ export default function LandingPage() {
     setSelectedAnalysts([]);
     setCompanies([]);
     setAnalysts([]);
+    setAnalystFetchError('');
   };
 
   const handleSelectTemplate = async (template) => {
@@ -169,6 +210,7 @@ export default function LandingPage() {
     setSelectedCompany(null);
     setSelectedAnalysts([]);
     setAnalysts([]);
+    setAnalystFetchError('');
     await fetchCompanies();
   };
 
@@ -278,8 +320,8 @@ export default function LandingPage() {
 
   const sortedAnalysts = useMemo(() => {
     return [...analysts].sort((a, b) => {
-      const labelA = getRecordLabel(a, ['name', 'analyst_name', 'email', 'id']).toLowerCase();
-      const labelB = getRecordLabel(b, ['name', 'analyst_name', 'email', 'id']).toLowerCase();
+      const labelA = getRecordLabel(a, ['full_name', 'name', 'analyst_name', 'email', 'id']).toLowerCase();
+      const labelB = getRecordLabel(b, ['full_name', 'name', 'analyst_name', 'email', 'id']).toLowerCase();
       return labelA.localeCompare(labelB);
     });
   }, [analysts]);
@@ -422,7 +464,7 @@ export default function LandingPage() {
                   <div className="mt-4 space-y-3">
                     {analysts.length > 0 ? (
                       sortedAnalysts.map((analyst) => {
-                        const label = getRecordLabel(analyst, ['name', 'analyst_name', 'email', 'id']);
+                        const label = getRecordLabel(analyst, ['full_name', 'name', 'analyst_name', 'email', 'id']);
                         const isSelected = selectedAnalysts.some((selected) => selected.id === analyst.id);
                         return (
                           <button
@@ -439,6 +481,11 @@ export default function LandingPage() {
                       <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500">No analysts found for the selected company.</div>
                     )}
                   </div>
+                  {analystFetchError ? (
+                    <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                      {analystFetchError}
+                    </div>
+                  ) : null}
                 </section>
               ) : null}
             </div>
@@ -462,7 +509,7 @@ export default function LandingPage() {
               {selectedCompany ? <p className="mt-1 text-sm text-slate-300">Company: {getRecordLabel(selectedCompany, ['company_name', 'name', 'id'])}</p> : null}
               {selectedAnalysts.length > 0 ? (
                 <p className="mt-1 text-sm text-slate-300">
-                  Analysts: {selectedAnalysts.map((analyst) => getRecordLabel(analyst, ['name', 'analyst_name', 'email', 'id'])).join(', ')}
+                  Analysts: {selectedAnalysts.map((analyst) => getRecordLabel(analyst, ['full_name', 'name', 'analyst_name', 'email', 'id'])).join(', ')}
                 </p>
               ) : null}
               {error ? <p className="mt-3 text-sm text-red-300">{error}</p> : null}
