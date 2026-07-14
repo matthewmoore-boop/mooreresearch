@@ -158,15 +158,16 @@ export default function LandingPage() {
     setSelectedTemplate(null);
     setSelectedCompany(null);
     setSelectedAnalyst(null);
+    setCompanies([]);
     setAnalysts([]);
-    await fetchCompanies();
   };
 
-  const handleSelectTemplate = (template) => {
+  const handleSelectTemplate = async (template) => {
     setSelectedTemplate(template);
     setSelectedCompany(null);
     setSelectedAnalyst(null);
     setAnalysts([]);
+    await fetchCompanies();
   };
 
   const handleSelectCompany = async (company) => {
@@ -318,7 +319,7 @@ export default function LandingPage() {
                     <div className="text-sm text-slate-500">Loading templates…</div>
                   ) : templates.length > 0 ? (
                     templates.map((template) => {
-                      const label = getRecordLabel(template, ['name', 'template_name', 'id']);
+                      const label = getRecordLabel(template, ['display_name', 'name', 'template_name', 'id']);
                       const isSelected = selectedTemplate?.id === template.id;
                       return (
                         <button
@@ -341,14 +342,12 @@ export default function LandingPage() {
                 </div>
               </section>
 
-              <section className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
-                <h3 className="text-lg font-semibold text-slate-900">2. Companies</h3>
-                <p className="mt-2 text-sm text-slate-600">Select the company for this note.</p>
-                <div className="mt-4 space-y-3">
-                  {loading && templates.length === 0 ? (
-                    <div className="text-sm text-slate-500">Loading companies…</div>
-                  ) : selectedTemplate ? (
-                    companies.length > 0 ? (
+              {selectedTemplate ? (
+                <section className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+                  <h3 className="text-lg font-semibold text-slate-900">2. Companies</h3>
+                  <p className="mt-2 text-sm text-slate-600">Select the company for this note.</p>
+                  <div className="mt-4 space-y-3">
+                    {companies.length > 0 ? (
                       companies.map((company) => {
                         const label = getRecordLabel(company, ['company_name', 'name', 'title', 'id']);
                         const isSelected = selectedCompany?.id === company.id;
@@ -365,29 +364,27 @@ export default function LandingPage() {
                       })
                     ) : (
                       <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500">No companies found in the database.</div>
-                    )
-                  ) : (
-                    <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500">Select a template first.</div>
+                    )}
+                  </div>
+                  {companyTable && (
+                    <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm text-slate-700">
+                      Using table: <span className="font-semibold">{companyTable}</span>
+                    </div>
                   )}
-                </div>
-                {companyTable && (
-                  <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm text-slate-700">
-                    Using table: <span className="font-semibold">{companyTable}</span>
-                  </div>
-                )}
-                {companyFetchError ? (
-                  <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                    {companyFetchError}
-                  </div>
-                ) : null}
-              </section>
+                  {companyFetchError ? (
+                    <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                      {companyFetchError}
+                    </div>
+                  ) : null}
+                </section>
+              ) : null}
 
-              <section className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
-                <h3 className="text-lg font-semibold text-slate-900">3. Analysts</h3>
-                <p className="mt-2 text-sm text-slate-600">Pick an analyst if available, then create the document.</p>
-                <div className="mt-4 space-y-3">
-                  {selectedCompany ? (
-                    analysts.length > 0 ? (
+              {selectedCompany ? (
+                <section className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+                  <h3 className="text-lg font-semibold text-slate-900">3. Analysts</h3>
+                  <p className="mt-2 text-sm text-slate-600">Pick an analyst if available, then create the document.</p>
+                  <div className="mt-4 space-y-3">
+                    {analysts.length > 0 ? (
                       analysts.map((analyst) => {
                         const label = getRecordLabel(analyst, ['name', 'analyst_name', 'email', 'id']);
                         const isSelected = selectedAnalyst?.id === analyst.id;
@@ -404,12 +401,10 @@ export default function LandingPage() {
                       })
                     ) : (
                       <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500">No analysts found for the selected company.</div>
-                    )
-                  ) : (
-                    <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500">Select a company first.</div>
-                  )}
-                </div>
-              </section>
+                    )}
+                  </div>
+                </section>
+              ) : null}
             </div>
 
             <div className="mt-8 rounded-3xl border border-slate-200 bg-slate-900 p-6 text-white shadow-sm">
@@ -427,7 +422,7 @@ export default function LandingPage() {
                   {loading ? 'Creating...' : 'Create Document'}
                 </button>
               </div>
-              {selectedTemplate ? <p className="mt-3 text-sm text-slate-300">Template: {getRecordLabel(selectedTemplate, ['name', 'id'])}</p> : null}
+              {selectedTemplate ? <p className="mt-3 text-sm text-slate-300">Template: {getRecordLabel(selectedTemplate, ['display_name', 'name', 'id'])}</p> : null}
               {selectedCompany ? <p className="mt-1 text-sm text-slate-300">Company: {getRecordLabel(selectedCompany, ['company_name', 'name', 'id'])}</p> : null}
               {selectedAnalyst ? <p className="mt-1 text-sm text-slate-300">Analyst: {getRecordLabel(selectedAnalyst, ['name', 'analyst_name', 'email', 'id'])}</p> : null}
               {error ? <p className="mt-3 text-sm text-red-300">{error}</p> : null}
