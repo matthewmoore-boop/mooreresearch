@@ -107,6 +107,7 @@ export default function LandingPage() {
       const result = await supabase
         .from(table)
         .select('*')
+        .eq('is_active_draft', true)
         .order('updated_at', { ascending: false })
         .limit(20);
 
