@@ -500,6 +500,7 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
     const [pictureAdvancedOpen, setPictureAdvancedOpen] = useState(false);
     const [reviewAdvancedOpen, setReviewAdvancedOpen] = useState(false);
     const imageUploadRef = useRef(null);
+    const textColorMenuRef = useRef(null);
     const [lastTextColor, setLastTextColor] = useState(() => {
         if (typeof window === 'undefined') {
             return '#111827';
@@ -516,6 +517,7 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
         window.localStorage.setItem(LAST_TEXT_COLOR_STORAGE_KEY, lastTextColor);
     }, [lastTextColor]);
 
+    const [textColorMenuOpen, setTextColorMenuOpen] = useState(false);
     const [customColorOpen, setCustomColorOpen] = useState(false);
     const [customColorValue, setCustomColorValue] = useState('#1D4ED8');
 
@@ -537,6 +539,23 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
             setReviewAdvancedOpen(false);
         }
     }, [activeTab]);
+
+    useEffect(() => {
+        if (!textColorMenuOpen) {
+            setCustomColorOpen(false);
+            return;
+        }
+
+        const handlePointerDown = (event) => {
+            if (textColorMenuRef.current && !textColorMenuRef.current.contains(event.target)) {
+                setTextColorMenuOpen(false);
+                setCustomColorOpen(false);
+            }
+        };
+
+        document.addEventListener('mousedown', handlePointerDown);
+        return () => document.removeEventListener('mousedown', handlePointerDown);
+    }, [textColorMenuOpen]);
 
     if (!editor) return null;
 
@@ -990,140 +1009,150 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
                                 ))}
                             </datalist>
 
-                            <input
-                                type="color"
-                                className="h-9 w-10 cursor-pointer rounded-lg border border-slate-200 bg-white p-1"
-                                value={selectedTextColor}
-                                title="Text Color"
-                                onChange={(event) => {
-                                    const color = event.target.value;
-                                    setLastTextColor(color);
-                                    editor.chain().focus().setColor(color).run();
-                                }}
-                            />
-                            <div className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2">
-                                <div className="flex items-center gap-2">
-                                    <button
-                                        type="button"
-                                        className={buttonClass(!editor.getAttributes('textStyle').color)}
-                                        onMouseDown={(event) => event.preventDefault()}
-                                        onClick={() => {
-                                            editor.chain().focus().unsetColor().run();
-                                        }}
-                                        title="Automatic text color"
-                                    >
-                                        <span className="text-xs font-medium">Automatic</span>
-                                    </button>
-                                    <button
-                                        type="button"
-                                        className={buttonClass(false)}
-                                        onMouseDown={(event) => event.preventDefault()}
-                                        onClick={() => {
-                                            setCustomColorValue(selectedTextColor || lastTextColor || '#1D4ED8');
-                                            setCustomColorOpen((value) => !value);
-                                        }}
-                                        title="More colors"
-                                    >
-                                        <span className="text-xs font-medium">More Colors...</span>
-                                    </button>
-                                </div>
-                                {customColorOpen ? (
-                                    <div className="rounded-lg border border-slate-200 bg-white p-2 shadow-sm">
-                                        <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Custom Color</div>
-                                        <div className="flex flex-wrap items-center gap-2">
-                                            <input
-                                                type="color"
-                                                className="h-9 w-10 cursor-pointer rounded-lg border border-slate-200 bg-white p-1"
-                                                value={customColorValue}
-                                                onChange={(event) => setCustomColorValue(event.target.value)}
-                                                title="Pick a custom color"
-                                            />
-                                            <input
-                                                type="text"
-                                                className="h-9 w-28 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700"
-                                                value={customColorValue}
-                                                onChange={(event) => setCustomColorValue(event.target.value)}
-                                                placeholder="#1D4ED8"
-                                                title="Enter a hex color"
-                                            />
+                            <div className="relative" ref={textColorMenuRef}>
+                                <button
+                                    type="button"
+                                    className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                                    onMouseDown={(event) => event.preventDefault()}
+                                    onClick={() => setTextColorMenuOpen((value) => !value)}
+                                    title="Text Color"
+                                >
+                                    <span className="h-4 w-4 rounded border border-slate-300" style={{ backgroundColor: selectedTextColor }} />
+                                    <span>Color</span>
+                                </button>
+                                {textColorMenuOpen ? (
+                                    <div className="absolute left-0 top-full z-40 mt-2 w-[18rem] overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl">
+                                        <div className="flex items-center justify-between gap-1">
+                                            <button
+                                                type="button"
+                                                className={buttonClass(!editor.getAttributes('textStyle').color)}
+                                                onMouseDown={(event) => event.preventDefault()}
+                                                onClick={() => {
+                                                    editor.chain().focus().unsetColor().run();
+                                                    setTextColorMenuOpen(false);
+                                                }}
+                                                title="Automatic text color"
+                                            >
+                                                <span className="text-xs font-medium">Auto</span>
+                                            </button>
                                             <button
                                                 type="button"
                                                 className={buttonClass(false)}
                                                 onMouseDown={(event) => event.preventDefault()}
                                                 onClick={() => {
-                                                    const normalizedColor = customColorValue.trim();
-                                                    if (!/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(normalizedColor)) {
-                                                        window.alert('Please enter a valid hex color like #1D4ED8.');
-                                                        return;
-                                                    }
-
-                                                    setLastTextColor(normalizedColor);
-                                                    editor.chain().focus().setColor(normalizedColor).run();
-                                                    setCustomColorOpen(false);
+                                                    setCustomColorValue(selectedTextColor || lastTextColor || '#1D4ED8');
+                                                    setCustomColorOpen((value) => !value);
                                                 }}
+                                                title="More colors"
                                             >
-                                                <span className="text-xs font-medium">Apply</span>
+                                                <span className="text-xs font-medium">More...</span>
                                             </button>
-                                            <button
-                                                type="button"
-                                                className={buttonClass(false)}
-                                                onMouseDown={(event) => event.preventDefault()}
-                                                onClick={() => setCustomColorOpen(false)}
-                                            >
-                                                <span className="text-xs font-medium">Cancel</span>
-                                            </button>
+                                        </div>
+
+                                        {customColorOpen ? (
+                                            <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+                                                <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Custom</div>
+                                                <div className="flex flex-wrap items-center gap-1">
+                                                    <input
+                                                        type="color"
+                                                        className="h-8 w-9 cursor-pointer rounded-lg border border-slate-200 bg-white p-1"
+                                                        value={customColorValue}
+                                                        onChange={(event) => setCustomColorValue(event.target.value)}
+                                                        title="Pick a custom color"
+                                                    />
+                                                    <input
+                                                        type="text"
+                                                        className="h-8 w-24 rounded-lg border border-slate-200 bg-white px-2.5 text-sm text-slate-700"
+                                                        value={customColorValue}
+                                                        onChange={(event) => setCustomColorValue(event.target.value)}
+                                                        placeholder="#1D4ED8"
+                                                        title="Enter a hex color"
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        className={buttonClass(false)}
+                                                        onMouseDown={(event) => event.preventDefault()}
+                                                        onClick={() => {
+                                                            const normalizedColor = customColorValue.trim();
+                                                            if (!/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(normalizedColor)) {
+                                                                window.alert('Please enter a valid hex color like #1D4ED8.');
+                                                                return;
+                                                            }
+
+                                                            setLastTextColor(normalizedColor);
+                                                            editor.chain().focus().setColor(normalizedColor).run();
+                                                            setCustomColorOpen(false);
+                                                            setTextColorMenuOpen(false);
+                                                        }}
+                                                    >
+                                                        <span className="text-xs font-medium">Apply</span>
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        className={buttonClass(false)}
+                                                        onMouseDown={(event) => event.preventDefault()}
+                                                        onClick={() => setCustomColorOpen(false)}
+                                                    >
+                                                        <span className="text-xs font-medium">Cancel</span>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : null}
+
+                                                <div className="mt-2 border-t border-slate-200 pt-2">
+                                                    <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Theme</div>
+                                                    <div className="flex flex-col gap-1">
+                                                {THEME_TEXT_PALETTE.map((row) => (
+                                                            <div key={row.label} className="flex items-center gap-1">
+                                                                <span className="w-10 shrink-0 text-[9px] font-medium uppercase tracking-wide text-slate-400">
+                                                            {row.label}
+                                                        </span>
+                                                                <div className="flex flex-wrap items-center gap-0.5">
+                                                            {row.colors.map((color) => (
+                                                                <button
+                                                                    key={`${row.label}-${color}`}
+                                                                    type="button"
+                                                                            className={`h-5.5 w-5.5 rounded-md border ${selectedTextColor === color ? 'border-slate-900 ring-2 ring-slate-900/20' : 'border-slate-200'}`}
+                                                                    style={{ backgroundColor: color, boxShadow: color === '#FFFFFF' ? 'inset 0 0 0 1px rgba(148, 163, 184, 0.7)' : undefined }}
+                                                                    onMouseDown={(event) => event.preventDefault()}
+                                                                    onClick={() => {
+                                                                        setLastTextColor(color);
+                                                                        editor.chain().focus().setColor(color).run();
+                                                                        setTextColorMenuOpen(false);
+                                                                    }}
+                                                                    title={`Use ${color}`}
+                                                                    aria-label={`Use ${color}`}
+                                                                />
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                                <div className="mt-2 border-t border-slate-200 pt-2">
+                                                    <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Std</div>
+                                                    <div className="flex flex-wrap items-center gap-0.5">
+                                                {DEFAULT_TEXT_COLORS.map((color) => (
+                                                    <button
+                                                        key={color}
+                                                        type="button"
+                                                                className={`h-5.5 w-5.5 rounded-md border ${selectedTextColor === color ? 'border-slate-900 ring-2 ring-slate-900/20' : 'border-slate-200'}`}
+                                                        style={{ backgroundColor: color }}
+                                                        onMouseDown={(event) => event.preventDefault()}
+                                                        onClick={() => {
+                                                            setLastTextColor(color);
+                                                            editor.chain().focus().setColor(color).run();
+                                                            setTextColorMenuOpen(false);
+                                                        }}
+                                                        title={`Use ${color}`}
+                                                        aria-label={`Use ${color}`}
+                                                    />
+                                                ))}
+                                            </div>
                                         </div>
                                     </div>
                                 ) : null}
-                                <div className="border-t border-slate-200 pt-2">
-                                    <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Theme</div>
-                                    <div className="flex flex-col gap-2">
-                                        {THEME_TEXT_PALETTE.map((row) => (
-                                            <div key={row.label} className="flex items-center gap-2">
-                                                <span className="w-16 shrink-0 text-[11px] font-medium uppercase tracking-wide text-slate-400">
-                                                    {row.label}
-                                                </span>
-                                                <div className="flex flex-wrap items-center gap-1.5">
-                                                    {row.colors.map((color) => (
-                                                        <button
-                                                            key={`${row.label}-${color}`}
-                                                            type="button"
-                                                            className={`h-7 w-7 rounded-md border ${selectedTextColor === color ? 'border-slate-900 ring-2 ring-slate-900/20' : 'border-slate-200'}`}
-                                                            style={{ backgroundColor: color, boxShadow: color === '#FFFFFF' ? 'inset 0 0 0 1px rgba(148, 163, 184, 0.7)' : undefined }}
-                                                            onMouseDown={(event) => event.preventDefault()}
-                                                            onClick={() => {
-                                                                setLastTextColor(color);
-                                                                editor.chain().focus().setColor(color).run();
-                                                            }}
-                                                            title={`Use ${color}`}
-                                                            aria-label={`Use ${color}`}
-                                                        />
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                                <div className="border-t border-slate-200 pt-2">
-                                    <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Standard</div>
-                                    <div className="flex flex-wrap items-center gap-1.5">
-                                        {DEFAULT_TEXT_COLORS.map((color) => (
-                                            <button
-                                                key={color}
-                                                type="button"
-                                                className={`h-7 w-7 rounded-md border ${selectedTextColor === color ? 'border-slate-900 ring-2 ring-slate-900/20' : 'border-slate-200'}`}
-                                                style={{ backgroundColor: color }}
-                                                onMouseDown={(event) => event.preventDefault()}
-                                                onClick={() => {
-                                                    setLastTextColor(color);
-                                                    editor.chain().focus().setColor(color).run();
-                                                }}
-                                                title={`Use ${color}`}
-                                                aria-label={`Use ${color}`}
-                                            />
-                                        ))}
-                                    </div>
-                                </div>
                             </div>
 
                             {ribbonIconButton(() => editor.chain().focus().toggleBold().run(), editor.isActive('bold'), 'Bold', MdFormatBold, 'Bold')}
