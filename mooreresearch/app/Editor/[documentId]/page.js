@@ -13,6 +13,8 @@ import { TextStyle } from '@tiptap/extension-text-style';
 import Color from '@tiptap/extension-color';
 import Highlight from '@tiptap/extension-highlight';
 import Image from '@tiptap/extension-image';
+import Subscript from '@tiptap/extension-subscript';
+import Superscript from '@tiptap/extension-superscript';
 import { Table } from '@tiptap/extension-table';
 import TableRow from '@tiptap/extension-table-row';
 import TableCell from '@tiptap/extension-table-cell';
@@ -53,6 +55,20 @@ const getRandomColor = () => colors[Math.floor(Math.random() * colors.length)];
 const DRAFT_STORAGE_KEY = 'mooreresearch-doc-draft';
 const FONT_OPTIONS = ['Arial', 'Calibri', 'Cambria', 'Georgia', 'Garamond', 'Times New Roman', 'Verdana'];
 const FONT_SIZE_OPTIONS = ['4', '6', '8', '10', '12', '14', '16', '18', '20', '24', '28', '32', '36', '40', '48', '56', '64', '72'];
+
+function normalizeFontFamily(fontFamily) {
+    if (!fontFamily) {
+        return '';
+    }
+
+    const cleaned = String(fontFamily)
+        .split(',')[0]
+        .trim()
+        .replace(/^['"]|['"]$/g, '');
+
+    const matchedOption = FONT_OPTIONS.find((option) => option.toLowerCase() === cleaned.toLowerCase());
+    return matchedOption || cleaned;
+}
 
 function normalizeFontSize(sizeValue) {
     const value = (sizeValue || '').trim();
@@ -180,14 +196,31 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
     const buttonClass = (active) =>
         `mr-1 mb-1 p-2 rounded border flex items-center justify-center ${active ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`;
 
+    const ribbonButtonClass = (active) =>
+        `inline-flex items-center justify-center rounded-lg border px-2.5 py-2 text-xs font-medium transition ${active ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`;
+
     const btn = (onClick, active, label, Icon) => (
         <button type="button" onClick={onClick} className={buttonClass(active)} title={label}>
             {Icon ? <Icon className="h-4 w-4" /> : null}
         </button>
     );
 
-    const selectedFontFamily = editor.getAttributes('textStyle').fontFamily || '';
+    const ribbonBtn = (onClick, active, label, content) => (
+        <button type="button" onClick={onClick} className={ribbonButtonClass(active)} title={label}>
+            {content}
+        </button>
+    );
+
+    const RibbonGroup = ({ title, children, className = '' }) => (
+        <div className={`min-w-0 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm ${className}`}>
+            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">{title}</div>
+            <div className="flex flex-wrap items-center gap-1.5">{children}</div>
+        </div>
+    );
+
+    const selectedFontFamily = normalizeFontFamily(editor.getAttributes('textStyle').fontFamily);
     const selectedFontSize = editor.getAttributes('textStyle').fontSize || '';
+    const selectedTextColor = editor.getAttributes('textStyle').color || '#111827';
 
     const handleCopy = async () => {
         const { from, to } = editor.state.selection;
@@ -206,6 +239,23 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
         }
     };
 
+    const handleCut = async () => {
+        const { from, to } = editor.state.selection;
+        if (from === to) {
+            return;
+        }
+
+        const selectedText = editor.state.doc.textBetween(from, to, '\n');
+
+        try {
+            await navigator.clipboard.writeText(selectedText);
+            editor.chain().focus().deleteSelection().run();
+        } catch (error) {
+            console.warn('Clipboard cut failed', error);
+            window.alert('Cut failed. Please use Ctrl+X.');
+        }
+    };
+
     const handlePaste = async () => {
         try {
             const text = await navigator.clipboard.readText();
@@ -216,6 +266,10 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
             console.warn('Clipboard paste failed', error);
             window.alert('Paste failed. Please use Ctrl+V.');
         }
+    };
+
+    const handleClearFormatting = () => {
+        editor.chain().focus().unsetAllMarks().clearNodes().run();
     };
 
     const applyFontSize = (rawValue) => {
@@ -239,138 +293,195 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
     ];
 
     return (
-        <div className="flex flex-wrap gap-2 border-b pb-3 mb-3">
-            <select
-                className="mr-1 mb-1 p-2 rounded border bg-white text-slate-700 border-slate-200"
-                value={selectedFontFamily}
-                onChange={(event) => {
-                    const fontFamily = event.target.value;
-                    if (fontFamily) {
-                        editor.chain().focus().setFontFamily(fontFamily).run();
-                    } else {
-                        editor.chain().focus().unsetFontFamily().run();
-                    }
-                }}
-                title="Font Family"
-            >
-                <option value="">Font</option>
-                {FONT_OPTIONS.map((font) => (
-                    <option key={font} value={font}>
-                        {font}
-                    </option>
-                ))}
-            </select>
-            <input
-                key={selectedFontSize || 'font-size-empty'}
-                list="font-size-options"
-                className="mr-1 mb-1 p-2 rounded border bg-white text-slate-700 border-slate-200 w-20"
-                defaultValue={toSizeInputValue(selectedFontSize)}
-                placeholder="Size"
-                title="Font Size (type a number for pt, or include units like px/pt)"
-                onBlur={(event) => applyFontSize(event.target.value)}
-                onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                        event.preventDefault();
-                        applyFontSize(event.currentTarget.value);
-                        event.currentTarget.blur();
-                    }
-                }}
-            />
-            <datalist id="font-size-options">
-                {FONT_SIZE_OPTIONS.map((size) => (
-                    <option key={size} value={size} />
-                ))}
-            </datalist>
-            {btn(() => editor.chain().focus().undo().run(), false, 'Undo', MdUndo)}
-            {btn(() => editor.chain().focus().redo().run(), false, 'Redo', MdRedo)}
-            {btn(() => handleCopy(), false, 'Copy', MdContentCopy)}
-            {btn(() => handlePaste(), false, 'Paste', MdContentPaste)}
-            {btn(() => editor.chain().focus().toggleBold().run(), editor.isActive('bold'), 'Bold', MdFormatBold)}
-            {btn(() => editor.chain().focus().toggleItalic().run(), editor.isActive('italic'), 'Italic', MdFormatItalic)}
-            {btn(() => editor.chain().focus().toggleStrike().run(), editor.isActive('strike'), 'Strike', MdFormatStrikethrough)}
-            {btn(() => editor.chain().focus().toggleUnderline().run(), editor.isActive('underline'), 'Underline', MdFormatUnderlined)}
-            {btn(() => editor.chain().focus().toggleHeading({ level: 1 }).run(), editor.isActive('heading', { level: 1 }), 'H1')}
-            {btn(() => editor.chain().focus().toggleHeading({ level: 2 }).run(), editor.isActive('heading', { level: 2 }), 'H2')}
-            {btn(() => editor.chain().focus().setParagraph().run(), editor.isActive('paragraph'), 'Paragraph')}
-            {btn(() => editor.chain().focus().toggleBulletList().run(), editor.isActive('bulletList'), 'Bullet', MdFormatListBulleted)}
-            {btn(() => editor.chain().focus().toggleOrderedList().run(), editor.isActive('orderedList'), 'Numbered', MdFormatListNumbered)}
-            {btn(() => editor.chain().focus().toggleBlockquote().run(), editor.isActive('blockquote'), 'Quote')}
-            {btn(() => editor.chain().focus().setTextAlign('left').run(), editor.isActive({ textAlign: 'left' }), 'Left', MdFormatAlignLeft)}
-            {btn(() => editor.chain().focus().setTextAlign('center').run(), editor.isActive({ textAlign: 'center' }), 'Center', MdFormatAlignCenter)}
-            {btn(() => editor.chain().focus().setTextAlign('right').run(), editor.isActive({ textAlign: 'right' }), 'Right', MdFormatAlignRight)}
-            {btn(() => editor.chain().focus().toggleHighlight({ color: '#FCEF6D' }).run(), editor.isActive('highlight'), 'Highlight')}
-            <button
-                type="button"
-                className={buttonClass(false)}
-                onClick={() => {
-                    const url = window.prompt('Enter image URL');
-                    if (url) {
-                        editor.chain().focus().setImage({ src: url }).run();
-                    }
-                }}
-                title="Image"
-            >
-                <MdImage className="h-4 w-4" />
-            </button>
-            <button
-                type="button"
-                className={buttonClass(false)}
-                onClick={() => {
-                    editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
-                }}
-                title="Table"
-            >
-                <MdTableChart className="h-4 w-4" />
-            </button>
-            <button
-                type="button"
-                className={buttonClass(false)}
-                onClick={() => {
-                    const href = window.prompt('Enter URL');
-                    if (href) {
-                        editor.chain().focus().extendMarkRange('link').setLink({ href }).run();
-                    }
-                }}
-                title="Link"
-            >
-                <MdLink className="h-4 w-4" />
-            </button>
-            <div className="relative">
-                <button
-                    type="button"
-                    className={buttonClass(false)}
-                    onClick={() => setCopilotOpen((value) => !value)}
-                    title="AI Co-Pilot"
-                    disabled={coPilotLoading}
-                >
-                    <MdSummarize className="h-4 w-4" />
-                </button>
-                {copilotOpen ? (
-                    <div className="absolute z-20 mt-2 w-64 rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
-                        {aiOptions.map((option) => (
-                            <button
-                                key={option.key}
-                                type="button"
-                                className="flex w-full items-start rounded px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
-                                onClick={() => {
-                                    onCoPilotAction(option.key);
-                                    setCopilotOpen(false);
-                                }}
-                            >
-                                <span className="font-medium">{option.label}</span>
-                            </button>
-                        ))}
-                    </div>
-                ) : null}
+        <div className="mb-4 rounded-3xl border border-slate-200 bg-slate-100 p-3 shadow-sm">
+            <div className="mb-3 flex flex-wrap items-center gap-2 border-b border-slate-200 pb-2">
+                <div className="rounded-full bg-slate-900 px-4 py-1.5 text-sm font-semibold text-white">Home</div>
+                <div className="rounded-full px-4 py-1.5 text-sm font-medium text-slate-500">Insert</div>
+                <div className="rounded-full px-4 py-1.5 text-sm font-medium text-slate-500">Review</div>
             </div>
-            <button
-                type="button"
-                onClick={onSave}
-                className="ml-auto bg-slate-900 hover:bg-slate-800 text-white font-semibold p-2 rounded-lg shadow-sm flex items-center justify-center"
-                title="Save to Database"
-            >
-                <MdSave className="h-4 w-4" />
-            </button>
+
+            <div className="flex flex-wrap items-stretch gap-3">
+                <RibbonGroup title="Clipboard">
+                    {ribbonBtn(() => handleCut(), false, 'Cut', <span>Cut</span>)}
+                    {ribbonBtn(() => handleCopy(), false, 'Copy', <span>Copy</span>)}
+                    {ribbonBtn(() => handlePaste(), false, 'Paste', <span>Paste</span>)}
+                    {ribbonBtn(() => editor.chain().focus().undo().run(), false, 'Undo', <span>Undo</span>)}
+                    {ribbonBtn(() => editor.chain().focus().redo().run(), false, 'Redo', <span>Redo</span>)}
+                </RibbonGroup>
+
+                <RibbonGroup title="Font" className="flex-1 min-w-[320px]">
+                    <input
+                        key={selectedFontFamily || 'font-family-empty'}
+                        list="font-family-options"
+                        className="h-9 w-36 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700"
+                        defaultValue={selectedFontFamily}
+                        placeholder="Font"
+                        title="Font Family"
+                        onBlur={(event) => {
+                            const fontFamily = normalizeFontFamily(event.target.value);
+                            if (fontFamily) {
+                                editor.chain().focus().setFontFamily(fontFamily).run();
+                            } else {
+                                editor.chain().focus().unsetFontFamily().run();
+                            }
+                        }}
+                        onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                                event.preventDefault();
+                                const fontFamily = normalizeFontFamily(event.currentTarget.value);
+                                if (fontFamily) {
+                                    editor.chain().focus().setFontFamily(fontFamily).run();
+                                } else {
+                                    editor.chain().focus().unsetFontFamily().run();
+                                }
+                                event.currentTarget.blur();
+                            }
+                        }}
+                    />
+                    <datalist id="font-family-options">
+                        {FONT_OPTIONS.map((font) => (
+                            <option key={font} value={font} />
+                        ))}
+                    </datalist>
+
+                    <input
+                        key={selectedFontSize || 'font-size-empty'}
+                        list="font-size-options"
+                        className="h-9 w-20 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700"
+                        defaultValue={toSizeInputValue(selectedFontSize)}
+                        placeholder="Size"
+                        title="Font Size (type a number for pt, or include units like px/pt)"
+                        onBlur={(event) => applyFontSize(event.target.value)}
+                        onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                                event.preventDefault();
+                                applyFontSize(event.currentTarget.value);
+                                event.currentTarget.blur();
+                            }
+                        }}
+                    />
+                    <datalist id="font-size-options">
+                        {FONT_SIZE_OPTIONS.map((size) => (
+                            <option key={size} value={size} />
+                        ))}
+                    </datalist>
+
+                    <input
+                        type="color"
+                        className="h-9 w-10 cursor-pointer rounded-lg border border-slate-200 bg-white p-1"
+                        value={selectedTextColor}
+                        title="Text Color"
+                        onChange={(event) => {
+                            const color = event.target.value;
+                            editor.chain().focus().setColor(color).run();
+                        }}
+                    />
+
+                    {btn(() => editor.chain().focus().toggleBold().run(), editor.isActive('bold'), 'Bold', MdFormatBold)}
+                    {btn(() => editor.chain().focus().toggleItalic().run(), editor.isActive('italic'), 'Italic', MdFormatItalic)}
+                    {btn(() => editor.chain().focus().toggleUnderline().run(), editor.isActive('underline'), 'Underline', MdFormatUnderlined)}
+                    {btn(() => editor.chain().focus().toggleStrike().run(), editor.isActive('strike'), 'Strike', MdFormatStrikethrough)}
+                    {ribbonBtn(() => editor.chain().focus().toggleSubscript().run(), editor.isActive('subscript'), 'Subscript', <span className="text-sm">x₂</span>)}
+                    {ribbonBtn(() => editor.chain().focus().toggleSuperscript().run(), editor.isActive('superscript'), 'Superscript', <span className="text-sm">x²</span>)}
+                    {ribbonBtn(() => editor.chain().focus().toggleHighlight({ color: '#FCEF6D' }).run(), editor.isActive('highlight'), 'Highlight', <span>Highlighter</span>)}
+                    {ribbonBtn(() => handleClearFormatting(), false, 'Clear formatting', <span>Clear</span>)}
+                </RibbonGroup>
+
+                <RibbonGroup title="Paragraph">
+                    {ribbonBtn(() => editor.chain().focus().setParagraph().run(), editor.isActive('paragraph'), 'Paragraph', <span>Normal</span>)}
+                    {ribbonBtn(() => editor.chain().focus().toggleHeading({ level: 1 }).run(), editor.isActive('heading', { level: 1 }), 'H1', <span>H1</span>)}
+                    {ribbonBtn(() => editor.chain().focus().toggleHeading({ level: 2 }).run(), editor.isActive('heading', { level: 2 }), 'H2', <span>H2</span>)}
+                    {btn(() => editor.chain().focus().toggleBulletList().run(), editor.isActive('bulletList'), 'Bullet', MdFormatListBulleted)}
+                    {btn(() => editor.chain().focus().toggleOrderedList().run(), editor.isActive('orderedList'), 'Numbered', MdFormatListNumbered)}
+                    {ribbonBtn(() => editor.chain().focus().toggleBlockquote().run(), editor.isActive('blockquote'), 'Quote', <span>Quote</span>)}
+                    {btn(() => editor.chain().focus().setTextAlign('left').run(), editor.isActive({ textAlign: 'left' }), 'Left', MdFormatAlignLeft)}
+                    {btn(() => editor.chain().focus().setTextAlign('center').run(), editor.isActive({ textAlign: 'center' }), 'Center', MdFormatAlignCenter)}
+                    {btn(() => editor.chain().focus().setTextAlign('right').run(), editor.isActive({ textAlign: 'right' }), 'Right', MdFormatAlignRight)}
+                    {ribbonBtn(() => editor.chain().focus().setTextAlign('justify').run(), editor.isActive({ textAlign: 'justify' }), 'Justify', <span>Justify</span>)}
+                </RibbonGroup>
+
+                <RibbonGroup title="Insert">
+                    <button
+                        type="button"
+                        className={buttonClass(false)}
+                        onClick={() => {
+                            const href = window.prompt('Enter URL');
+                            if (href) {
+                                editor.chain().focus().extendMarkRange('link').setLink({ href }).run();
+                            }
+                        }}
+                        title="Link"
+                    >
+                        <MdLink className="h-4 w-4" />
+                    </button>
+                    <button
+                        type="button"
+                        className={buttonClass(false)}
+                        onClick={() => {
+                            const url = window.prompt('Enter image URL');
+                            if (url) {
+                                editor.chain().focus().setImage({ src: url }).run();
+                            }
+                        }}
+                        title="Image"
+                    >
+                        <MdImage className="h-4 w-4" />
+                    </button>
+                    <button
+                        type="button"
+                        className={buttonClass(false)}
+                        onClick={() => {
+                            editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
+                        }}
+                        title="Table"
+                    >
+                        <MdTableChart className="h-4 w-4" />
+                    </button>
+                </RibbonGroup>
+
+                <RibbonGroup title="Review">
+                    <div className="relative">
+                        <button
+                            type="button"
+                            className={buttonClass(false)}
+                            onClick={() => setCopilotOpen((value) => !value)}
+                            title="AI Co-Pilot"
+                            disabled={coPilotLoading}
+                        >
+                            <MdSummarize className="h-4 w-4" />
+                        </button>
+                        {copilotOpen ? (
+                            <div className="absolute right-0 z-20 mt-2 w-64 rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
+                                {aiOptions.map((option) => (
+                                    <button
+                                        key={option.key}
+                                        type="button"
+                                        className="flex w-full items-start rounded px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                                        onClick={() => {
+                                            onCoPilotAction(option.key);
+                                            setCopilotOpen(false);
+                                        }}
+                                    >
+                                        <span className="font-medium">{option.label}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        ) : null}
+                    </div>
+                </RibbonGroup>
+
+                <div className="ml-auto flex items-start">
+                    <button
+                        type="button"
+                        onClick={onSave}
+                        className="inline-flex h-12 items-center justify-center rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
+                        title="Save to Database"
+                    >
+                        <MdSave className="mr-2 h-4 w-4" />
+                        Save
+                    </button>
+                </div>
+            </div>
         </div>
     );
 }
@@ -400,6 +511,8 @@ function CollaborativeEditor({ documentId }) {
             TextStyle,
             FontFamily,
             FontSize,
+            Subscript,
+            Superscript,
             Color.configure({ types: ['textStyle'] }),
             Highlight.configure({ multicolor: true }),
             Image.configure({ inline: false, allowBase64: true }),
