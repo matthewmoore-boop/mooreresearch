@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
+import { Extension } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import Collaboration from '@tiptap/extension-collaboration';
 import Placeholder from '@tiptap/extension-placeholder';
@@ -35,6 +36,10 @@ import {
     MdLink,
     MdSave,
     MdSummarize,
+    MdUndo,
+    MdRedo,
+    MdContentCopy,
+    MdContentPaste,
 } from 'react-icons/md';
 
 
@@ -46,7 +51,116 @@ const supabase = createClient(
 const colors = ['#958DF1', '#F98181', '#FBBC88', '#FAF594', '#70CFF8', '#94FADB', '#B9F18D'];
 const getRandomColor = () => colors[Math.floor(Math.random() * colors.length)];
 const DRAFT_STORAGE_KEY = 'mooreresearch-doc-draft';
+const FONT_OPTIONS = ['Arial', 'Calibri', 'Cambria', 'Georgia', 'Garamond', 'Times New Roman', 'Verdana'];
+const FONT_SIZE_OPTIONS = ['4', '6', '8', '10'];
+
+function normalizeFontSize(sizeValue) {
+    const value = (sizeValue || '').trim();
+
+    if (!value) {
+        return null;
+    }
+
+    if (/^\d+(\.\d+)?$/.test(value)) {
+        return `${value}pt`;
+    }
+
+    if (/^\d+(\.\d+)?(px|pt|em|rem|%)$/i.test(value)) {
+        return value;
+    }
+
+    return null;
+}
+
+function toSizeInputValue(fontSize) {
+    if (!fontSize) {
+        return '';
+    }
+
+    const match = String(fontSize).trim().match(/^(\d+(?:\.\d+)?)(px|pt|em|rem|%)?$/i);
+    return match ? match[1] : String(fontSize);
+}
 //const DOCUMENT_ID_TO_LOAD = 'c63d1b04-aadf-4251-871a-bc5a7da82fe8';
+
+const FontFamily = Extension.create({
+    name: 'fontFamily',
+
+    addGlobalAttributes() {
+        return [
+            {
+                types: ['textStyle'],
+                attributes: {
+                    fontFamily: {
+                        default: null,
+                        parseHTML: (element) => element.style.fontFamily || null,
+                        renderHTML: (attributes) => {
+                            if (!attributes.fontFamily) {
+                                return {};
+                            }
+
+                            return {
+                                style: `font-family: ${attributes.fontFamily}`,
+                            };
+                        },
+                    },
+                },
+            },
+        ];
+    },
+
+    addCommands() {
+        return {
+            setFontFamily:
+                (fontFamily) =>
+                ({ chain }) =>
+                    chain().setMark('textStyle', { fontFamily }).run(),
+            unsetFontFamily:
+                () =>
+                ({ chain }) =>
+                    chain().setMark('textStyle', { fontFamily: null }).removeEmptyTextStyle().run(),
+        };
+    },
+});
+
+const FontSize = Extension.create({
+    name: 'fontSize',
+
+    addGlobalAttributes() {
+        return [
+            {
+                types: ['textStyle'],
+                attributes: {
+                    fontSize: {
+                        default: null,
+                        parseHTML: (element) => element.style.fontSize || null,
+                        renderHTML: (attributes) => {
+                            if (!attributes.fontSize) {
+                                return {};
+                            }
+
+                            return {
+                                style: `font-size: ${attributes.fontSize}`,
+                            };
+                        },
+                    },
+                },
+            },
+        ];
+    },
+
+    addCommands() {
+        return {
+            setFontSize:
+                (fontSize) =>
+                ({ chain }) =>
+                    chain().setMark('textStyle', { fontSize }).run(),
+            unsetFontSize:
+                () =>
+                ({ chain }) =>
+                    chain().setMark('textStyle', { fontSize: null }).removeEmptyTextStyle().run(),
+        };
+    },
+});
 
 function parseContentJson(value) {
     if (typeof value === 'string') {
@@ -72,6 +186,51 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
         </button>
     );
 
+    const selectedFontFamily = editor.getAttributes('textStyle').fontFamily || '';
+    const selectedFontSize = editor.getAttributes('textStyle').fontSize || '';
+
+    const handleCopy = async () => {
+        const { from, to } = editor.state.selection;
+        const selectedText = editor.state.doc.textBetween(from, to, '\n');
+        const textToCopy = selectedText || editor.getText();
+
+        if (!textToCopy) {
+            return;
+        }
+
+        try {
+            await navigator.clipboard.writeText(textToCopy);
+        } catch (error) {
+            console.warn('Clipboard copy failed', error);
+            window.alert('Copy failed. Please use Ctrl+C.');
+        }
+    };
+
+    const handlePaste = async () => {
+        try {
+            const text = await navigator.clipboard.readText();
+            if (text) {
+                editor.chain().focus().insertContent(text).run();
+            }
+        } catch (error) {
+            console.warn('Clipboard paste failed', error);
+            window.alert('Paste failed. Please use Ctrl+V.');
+        }
+    };
+
+    const applyFontSize = (rawValue) => {
+        const normalizedSize = normalizeFontSize(rawValue);
+
+        if (normalizedSize) {
+            editor.chain().focus().setFontSize(normalizedSize).run();
+            return;
+        }
+
+        if (!rawValue.trim()) {
+            editor.chain().focus().unsetFontSize().run();
+        }
+    };
+
     const aiOptions = [
         { key: 'summarize', label: 'Summarize' },
         { key: 'improve', label: 'Improve Writing' },
@@ -81,6 +240,51 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
 
     return (
         <div className="flex flex-wrap gap-2 border-b pb-3 mb-3">
+            <select
+                className="mr-1 mb-1 p-2 rounded border bg-white text-slate-700 border-slate-200"
+                value={selectedFontFamily}
+                onChange={(event) => {
+                    const fontFamily = event.target.value;
+                    if (fontFamily) {
+                        editor.chain().focus().setFontFamily(fontFamily).run();
+                    } else {
+                        editor.chain().focus().unsetFontFamily().run();
+                    }
+                }}
+                title="Font Family"
+            >
+                <option value="">Font</option>
+                {FONT_OPTIONS.map((font) => (
+                    <option key={font} value={font}>
+                        {font}
+                    </option>
+                ))}
+            </select>
+            <input
+                key={selectedFontSize || 'font-size-empty'}
+                list="font-size-options"
+                className="mr-1 mb-1 p-2 rounded border bg-white text-slate-700 border-slate-200 w-20"
+                defaultValue={toSizeInputValue(selectedFontSize)}
+                placeholder="Size"
+                title="Font Size (type a number for pt, or include units like px/pt)"
+                onBlur={(event) => applyFontSize(event.target.value)}
+                onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                        event.preventDefault();
+                        applyFontSize(event.currentTarget.value);
+                        event.currentTarget.blur();
+                    }
+                }}
+            />
+            <datalist id="font-size-options">
+                {FONT_SIZE_OPTIONS.map((size) => (
+                    <option key={size} value={size} />
+                ))}
+            </datalist>
+            {btn(() => editor.chain().focus().undo().run(), false, 'Undo', MdUndo)}
+            {btn(() => editor.chain().focus().redo().run(), false, 'Redo', MdRedo)}
+            {btn(() => handleCopy(), false, 'Copy', MdContentCopy)}
+            {btn(() => handlePaste(), false, 'Paste', MdContentPaste)}
             {btn(() => editor.chain().focus().toggleBold().run(), editor.isActive('bold'), 'Bold', MdFormatBold)}
             {btn(() => editor.chain().focus().toggleItalic().run(), editor.isActive('italic'), 'Italic', MdFormatItalic)}
             {btn(() => editor.chain().focus().toggleStrike().run(), editor.isActive('strike'), 'Strike', MdFormatStrikethrough)}
@@ -194,6 +398,8 @@ function CollaborativeEditor({ documentId }) {
             Link.configure({ openOnClick: false }),
             TextAlign.configure({ types: ['heading', 'paragraph'] }),
             TextStyle,
+            FontFamily,
+            FontSize,
             Color.configure({ types: ['textStyle'] }),
             Highlight.configure({ multicolor: true }),
             Image.configure({ inline: false, allowBase64: true }),
@@ -308,6 +514,7 @@ function CollaborativeEditor({ documentId }) {
         const json = editor.getJSON();
         const payload = {
             content_json: json,
+            is_active_draft: true,
             updated_at: new Date().toISOString(),
         };
 
