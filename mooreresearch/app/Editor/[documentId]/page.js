@@ -581,7 +581,7 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
     );
 
     const RibbonGroup = ({ title, children, className = '' }) => (
-        <div className={`min-w-0 shrink-0 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm ${className}`}>
+        <div className={`min-w-0 shrink rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm ${className}`}>
             <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">{title}</div>
             <div className="flex flex-wrap items-center gap-1.5">{children}</div>
         </div>
@@ -1167,7 +1167,7 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
 
                         <div className="hidden self-stretch border-l border-slate-200/70 sm:block" aria-hidden="true" />
 
-                        <RibbonGroup title="Paragraph">
+                        <RibbonGroup title="Paragraph" className="flex-1 min-w-[24rem] max-w-full">
                             {ribbonIconButton(() => editor.chain().focus().setParagraph().run(), editor.isActive('paragraph'), 'Paragraph', null, 'Normal')}
                             {ribbonIconButton(() => editor.chain().focus().toggleHeading({ level: 1 }).run(), editor.isActive('heading', { level: 1 }), 'H1', null, 'H1')}
                             {ribbonIconButton(() => editor.chain().focus().toggleHeading({ level: 2 }).run(), editor.isActive('heading', { level: 2 }), 'H2', null, 'H2')}
