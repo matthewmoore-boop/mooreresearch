@@ -1046,10 +1046,10 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
                                     <span>Color</span>
                                 </button>
                                 {textColorMenuOpen ? (
-                                    <div className="fixed inset-0 z-50 flex justify-center px-3 pt-20" onMouseDown={() => setTextColorMenuOpen(false)}>
+                                    <div className="fixed inset-0 z-50 flex justify-center px-3 pt-6" onMouseDown={() => setTextColorMenuOpen(false)}>
                                         <div
-                                            className="overflow-y-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl"
-                                            style={{ width: 'min(288px, calc(100vw - 24px))', maxHeight: 'calc(100vh - 96px)' }}
+                                            className="rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl"
+                                            style={{ width: 'min(288px, calc(100vw - 24px))' }}
                                             onMouseDown={(event) => event.stopPropagation()}
                                         >
                                             <div className="flex items-center justify-between gap-1">
