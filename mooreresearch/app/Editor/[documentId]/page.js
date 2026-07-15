@@ -489,11 +489,12 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
     const [reviewAdvancedOpen, setReviewAdvancedOpen] = useState(false);
     const imageUploadRef = useRef(null);
 
+    const imageIsActive = editor.isActive('image');
     useEffect(() => {
-        if (!editor.isActive('image')) {
+        if (!imageIsActive) {
             setPictureAdvancedOpen(false);
         }
-    }, [editor, imageIsActive]);
+    }, [imageIsActive]);
 
     useEffect(() => {
         if (!fileMenuOpen) {
@@ -540,7 +541,6 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
     const selectedFontFamily = normalizeFontFamily(editor.getAttributes('textStyle').fontFamily);
     const selectedFontSize = editor.getAttributes('textStyle').fontSize || '';
     const selectedTextColor = editor.getAttributes('textStyle').color || '#111827';
-    const imageIsActive = editor.isActive('image');
     const imageAttrs = editor.getAttributes('image') || {};
     const tableIsActive = editor.isActive('table');
     const tableCellIsActive = editor.isActive('tableCell') || editor.isActive('tableHeader');
