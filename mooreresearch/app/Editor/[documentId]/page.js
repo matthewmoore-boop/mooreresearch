@@ -479,11 +479,32 @@ function replaceTextNodes(node, findValue, replaceValue) {
 
 function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen, coPilotLoading, currentUser }) {
     const [fileMenuOpen, setFileMenuOpen] = useState(false);
+    const [fileAdvancedOpen, setFileAdvancedOpen] = useState(false);
     const [activeTab, setActiveTab] = useState('home');
     const [commentText, setCommentText] = useState('');
     const [cropDialogOpen, setCropDialogOpen] = useState(false);
     const [cropSource, setCropSource] = useState('');
+    const [pictureAdvancedOpen, setPictureAdvancedOpen] = useState(false);
+    const [reviewAdvancedOpen, setReviewAdvancedOpen] = useState(false);
     const imageUploadRef = useRef(null);
+
+    useEffect(() => {
+        if (!editor.isActive('image')) {
+            setPictureAdvancedOpen(false);
+        }
+    }, [editor, imageIsActive]);
+
+    useEffect(() => {
+        if (!fileMenuOpen) {
+            setFileAdvancedOpen(false);
+        }
+    }, [fileMenuOpen]);
+
+    useEffect(() => {
+        if (activeTab !== 'review') {
+            setReviewAdvancedOpen(false);
+        }
+    }, [activeTab]);
 
     if (!editor) return null;
 
@@ -494,13 +515,13 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
         `inline-flex items-center justify-center rounded-lg border px-2.5 py-2 text-xs font-medium transition ${active ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`;
 
     const ribbonBtn = (onClick, active, label, content) => (
-        <button type="button" onClick={onClick} className={ribbonButtonClass(active)} title={label}>
+        <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={onClick} className={ribbonButtonClass(active)} title={label}>
             {content}
         </button>
     );
 
     const ribbonIconButton = (onClick, active, label, Icon, text) => (
-        <button type="button" onClick={onClick} className={ribbonButtonClass(active)} title={label}>
+        <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={onClick} className={ribbonButtonClass(active)} title={label}>
             <span className="inline-flex items-center gap-1.5">
                 {Icon ? <Icon className="h-3.5 w-3.5" /> : null}
                 <span>{text}</span>
@@ -520,6 +541,10 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
     const selectedTextColor = editor.getAttributes('textStyle').color || '#111827';
     const imageIsActive = editor.isActive('image');
     const imageAttrs = editor.getAttributes('image') || {};
+    const tableIsActive = editor.isActive('table');
+    const tableCellIsActive = editor.isActive('tableCell') || editor.isActive('tableHeader');
+    const tableHeaderIsActive = editor.isActive('tableHeader');
+    const tableBodyCellIsActive = editor.isActive('tableCell');
 
     const handleCopy = async () => {
         const { from, to } = editor.state.selection;
@@ -774,41 +799,50 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
     ];
 
     return (
-        <div className="sticky top-0 z-30 mb-4 rounded-3xl border border-slate-200 bg-slate-100/95 p-3 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-slate-100/85">
-            <div className="mb-2 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-2">
-                <div className="flex items-center gap-2">
+        <div className="sticky top-0 z-30 mb-4 overflow-hidden rounded-3xl border border-slate-200/80 bg-gradient-to-b from-slate-100/95 via-slate-100/90 to-slate-50/95 p-2.5 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-slate-100/85">
+            <div className="-mx-2.5 -mt-2.5 mb-2 flex flex-wrap items-center justify-between gap-2.5 border-b border-slate-200/60 bg-white/60 px-2.5 pb-1.5 pt-2 backdrop-blur-sm">
+                <div className="flex items-center gap-1.5">
                     <div className="relative">
                         <button
                             type="button"
+                            onMouseDown={(event) => event.preventDefault()}
                             onClick={() => setFileMenuOpen((value) => !value)}
-                            className="rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white"
+                            className="rounded-full bg-slate-900 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-white"
                         >
                             File
                         </button>
                         {fileMenuOpen ? (
-                            <div className="absolute left-0 top-full z-40 mt-2 w-[28rem] overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
-                                <div className="grid grid-cols-[10rem_1fr]">
+                            <div className="absolute left-0 top-full z-40 mt-2 w-[24rem] overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
+                                <div className="grid grid-cols-[9rem_1fr]">
                                     <div className="border-r border-slate-200 bg-slate-50 p-3">
                                         <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Backstage</div>
                                         <button type="button" className="mb-2 w-full rounded-2xl bg-slate-900 px-3 py-2 text-left text-sm font-semibold text-white" onClick={() => { onSave(); setFileMenuOpen(false); }}>
                                             Save
                                         </button>
-                                        <button type="button" className="mb-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-700" onClick={() => { handleCopy(); setFileMenuOpen(false); }}>
-                                            Copy
-                                        </button>
-                                        <button type="button" className="mb-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-700" onClick={() => { handlePaste(); setFileMenuOpen(false); }}>
-                                            Paste
-                                        </button>
-                                        <button type="button" className="mb-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-700" onClick={() => { handleClearFormatting(); setFileMenuOpen(false); }}>
-                                            Clear formatting
+                                        <button type="button" className={buttonClass(fileAdvancedOpen)} onMouseDown={(event) => event.preventDefault()} onClick={() => setFileAdvancedOpen((value) => !value)}>
+                                            <span className="text-xs font-medium">More</span>
                                         </button>
                                     </div>
                                     <div className="p-4">
                                         <div className="text-sm font-semibold text-slate-900">Document actions</div>
-                                        <p className="mt-1 text-sm text-slate-600">Quick access to save and clipboard actions, plus formatting cleanup.</p>
-                                        <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
-                                            This panel behaves like a small backstage view so the file actions are always one click away.
-                                        </div>
+                                        <p className="mt-1 text-sm text-slate-600">Save stays visible. Clipboard and cleanup actions are tucked under More.</p>
+                                        {fileAdvancedOpen ? (
+                                            <div className="mt-4 space-y-2">
+                                                <button type="button" className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-700" onClick={() => { handleCopy(); setFileMenuOpen(false); }}>
+                                                    Copy selected text
+                                                </button>
+                                                <button type="button" className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-700" onClick={() => { handlePaste(); setFileMenuOpen(false); }}>
+                                                    Paste from clipboard
+                                                </button>
+                                                <button type="button" className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-700" onClick={() => { handleClearFormatting(); setFileMenuOpen(false); }}>
+                                                    Clear formatting
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+                                                Open More for clipboard and formatting tools.
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -816,22 +850,25 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
                     </div>
                     <button
                         type="button"
+                        onMouseDown={(event) => event.preventDefault()}
                         onClick={() => setActiveTab('home')}
-                        className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${activeTab === 'home' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'}`}
+                        className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${activeTab === 'home' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'}`}
                     >
                         Home
                     </button>
                     <button
                         type="button"
+                        onMouseDown={(event) => event.preventDefault()}
                         onClick={() => setActiveTab('insert')}
-                        className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${activeTab === 'insert' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'}`}
+                        className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${activeTab === 'insert' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'}`}
                     >
                         Insert
                     </button>
                     <button
                         type="button"
+                        onMouseDown={(event) => event.preventDefault()}
                         onClick={() => setActiveTab('review')}
-                        className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${activeTab === 'review' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'}`}
+                        className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${activeTab === 'review' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'}`}
                     >
                         Review
                     </button>
@@ -841,8 +878,9 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
                     {ribbonBtn(() => editor.chain().focus().redo().run(), false, 'Redo', <span>Redo</span>)}
                     <button
                         type="button"
+                        onMouseDown={(event) => event.preventDefault()}
                         onClick={onSave}
-                        className="ml-2 inline-flex h-10 items-center justify-center rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
+                        className="ml-1.5 inline-flex h-9 items-center justify-center rounded-2xl bg-slate-900 px-3.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
                         title="Save to Database"
                     >
                         <MdSave className="mr-2 h-4 w-4" />
@@ -851,7 +889,7 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
                 </div>
             </div>
 
-            <div className="flex flex-wrap items-stretch gap-2.5">
+            <div className="flex flex-wrap items-stretch gap-2.5 px-0.5 pb-0.5">
                 {activeTab === 'home' ? (
                     <>
                         <RibbonGroup title="Clipboard">
@@ -862,7 +900,7 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
                             {ribbonIconButton(() => editor.chain().focus().redo().run(), false, 'Redo', MdRedo, 'Redo')}
                         </RibbonGroup>
 
-                        <div className="hidden self-stretch border-l border-slate-300 sm:block" aria-hidden="true" />
+                        <div className="hidden self-stretch border-l border-slate-200/70 sm:block" aria-hidden="true" />
 
                         <RibbonGroup title="Font" className="flex-1 min-w-[340px]">
                             <input
@@ -942,7 +980,7 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
                             {ribbonBtn(() => handleClearFormatting(), false, 'Clear formatting', <span>Clear</span>)}
                         </RibbonGroup>
 
-                        <div className="hidden self-stretch border-l border-slate-300 sm:block" aria-hidden="true" />
+                        <div className="hidden self-stretch border-l border-slate-200/70 sm:block" aria-hidden="true" />
 
                         <RibbonGroup title="Paragraph">
                             {ribbonIconButton(() => editor.chain().focus().setParagraph().run(), editor.isActive('paragraph'), 'Paragraph', null, 'Normal')}
@@ -950,11 +988,11 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
                             {ribbonIconButton(() => editor.chain().focus().toggleHeading({ level: 2 }).run(), editor.isActive('heading', { level: 2 }), 'H2', null, 'H2')}
                             {ribbonIconButton(() => editor.chain().focus().toggleBulletList().run(), editor.isActive('bulletList'), 'Bullet', MdFormatListBulleted, 'Bullets')}
                             {ribbonIconButton(() => editor.chain().focus().toggleOrderedList().run(), editor.isActive('orderedList'), 'Numbered', MdFormatListNumbered, 'Numbering')}
-                            {ribbonBtn(() => editor.chain().focus().toggleBlockquote().run(), editor.isActive('blockquote'), 'Quote', <span>Quote</span>)}
+                            {ribbonBtn(() => editor.chain().focus().toggleBlockquote().run(), editor.isActive('blockquote'), 'Quote', <span className={editor.isActive('blockquote') ? 'font-semibold' : ''}>Quote</span>)}
                             {ribbonIconButton(() => editor.chain().focus().setTextAlign('left').run(), editor.isActive({ textAlign: 'left' }), 'Left', MdFormatAlignLeft, 'Left')}
                             {ribbonIconButton(() => editor.chain().focus().setTextAlign('center').run(), editor.isActive({ textAlign: 'center' }), 'Center', MdFormatAlignCenter, 'Center')}
                             {ribbonIconButton(() => editor.chain().focus().setTextAlign('right').run(), editor.isActive({ textAlign: 'right' }), 'Right', MdFormatAlignRight, 'Right')}
-                            {ribbonBtn(() => editor.chain().focus().setTextAlign('justify').run(), editor.isActive({ textAlign: 'justify' }), 'Justify', <span>Justify</span>)}
+                            {ribbonBtn(() => editor.chain().focus().setTextAlign('justify').run(), editor.isActive({ textAlign: 'justify' }), 'Justify', <span className={editor.isActive({ textAlign: 'justify' }) ? 'font-semibold' : ''}>Justify</span>)}
                         </RibbonGroup>
                     </>
                 ) : null}
@@ -965,6 +1003,7 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
                             <button
                                 type="button"
                                 className={buttonClass(false)}
+                                onMouseDown={(event) => event.preventDefault()}
                                 onClick={() => {
                                     const href = window.prompt('Enter URL');
                                     if (href) {
@@ -981,6 +1020,7 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
                             <button
                                 type="button"
                                 className={buttonClass(false)}
+                                onMouseDown={(event) => event.preventDefault()}
                                 onClick={handleInsertImageUrl}
                                 title="Picture from URL"
                             >
@@ -992,6 +1032,7 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
                             <button
                                 type="button"
                                 className={buttonClass(false)}
+                                onMouseDown={(event) => event.preventDefault()}
                                 onClick={() => imageUploadRef.current?.click()}
                                 title="Upload picture"
                             >
@@ -1004,6 +1045,7 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
                             <button
                                 type="button"
                                 className={buttonClass(false)}
+                                onMouseDown={(event) => event.preventDefault()}
                                 onClick={() => insertTable(3, 3)}
                                 title="Insert table"
                             >
@@ -1012,18 +1054,19 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
                                     <span className="text-xs font-medium">Table</span>
                                 </span>
                             </button>
-                            <button type="button" className={buttonClass(false)} onClick={() => insertTable(2, 2)} title="Quick 2x2 table">
+                            <button type="button" className={buttonClass(false)} onMouseDown={(event) => event.preventDefault()} onClick={() => insertTable(2, 2)} title="Quick 2x2 table">
                                 <span className="text-xs font-medium">2x2</span>
                             </button>
-                            <button type="button" className={buttonClass(false)} onClick={() => insertTable(3, 4)} title="Quick 3x4 table">
+                            <button type="button" className={buttonClass(false)} onMouseDown={(event) => event.preventDefault()} onClick={() => insertTable(3, 4)} title="Quick 3x4 table">
                                 <span className="text-xs font-medium">3x4</span>
                             </button>
-                            <button type="button" className={buttonClass(false)} onClick={() => insertTable(4, 4)} title="Quick 4x4 table">
+                            <button type="button" className={buttonClass(false)} onMouseDown={(event) => event.preventDefault()} onClick={() => insertTable(4, 4)} title="Quick 4x4 table">
                                 <span className="text-xs font-medium">4x4</span>
                             </button>
                             <button
                                 type="button"
                                 className={buttonClass(false)}
+                                onMouseDown={(event) => event.preventDefault()}
                                 onClick={handleInsertPageBreak}
                                 title="Page break"
                             >
@@ -1033,98 +1076,128 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
 
                         {imageIsActive ? (
                             <RibbonGroup title="Picture Tools">
-                                <button type="button" className={buttonClass(false)} onClick={handleReplaceImageUrl} title="Replace picture URL">
+                                <button type="button" className={buttonClass(imageIsActive)} onMouseDown={(event) => event.preventDefault()} onClick={handleReplaceImageUrl} title="Replace picture URL">
                                     <span className="text-xs font-medium">Replace</span>
                                 </button>
-                                <button type="button" className={buttonClass(false)} onClick={() => imageUploadRef.current?.click()} title="Upload replacement picture">
+                                <button type="button" className={buttonClass(imageIsActive)} onMouseDown={(event) => event.preventDefault()} onClick={() => imageUploadRef.current?.click()} title="Upload replacement picture">
                                     <span className="text-xs font-medium">Upload</span>
                                 </button>
-                                <button type="button" className={buttonClass(false)} onClick={handleDeleteImage} title="Delete picture">
+                                <button type="button" className={buttonClass(imageIsActive)} onMouseDown={(event) => event.preventDefault()} onClick={handleDeleteImage} title="Delete picture">
                                     <span className="text-xs font-medium">Delete</span>
                                 </button>
-                                <button type="button" className={buttonClass(false)} onClick={handleOpenCropDialog} title="Crop picture">
+                                <button type="button" className={buttonClass(!!imageAttrs.crop)} onMouseDown={(event) => event.preventDefault()} onClick={handleOpenCropDialog} title="Crop picture">
                                     <span className="text-xs font-medium">Crop</span>
                                 </button>
-                                <button type="button" className={buttonClass(imageAttrs.crop === 'square')} onClick={() => setImageCrop('square')} title="Crop picture to square">
+                                <button type="button" className={buttonClass(imageAttrs.crop === 'square')} onMouseDown={(event) => event.preventDefault()} onClick={() => setImageCrop('square')} title="Crop picture to square">
                                     <span className="text-xs font-medium">1:1</span>
                                 </button>
-                                <button type="button" className={buttonClass(imageAttrs.crop === 'widescreen')} onClick={() => setImageCrop('widescreen')} title="Crop picture to widescreen">
+                                <button type="button" className={buttonClass(imageAttrs.crop === 'widescreen')} onMouseDown={(event) => event.preventDefault()} onClick={() => setImageCrop('widescreen')} title="Crop picture to widescreen">
                                     <span className="text-xs font-medium">16:9</span>
                                 </button>
-                                <button type="button" className={buttonClass(imageAttrs.crop === 'portrait')} onClick={() => setImageCrop('portrait')} title="Crop picture to portrait">
+                                <button type="button" className={buttonClass(imageAttrs.crop === 'portrait')} onMouseDown={(event) => event.preventDefault()} onClick={() => setImageCrop('portrait')} title="Crop picture to portrait">
                                     <span className="text-xs font-medium">4:5</span>
                                 </button>
-                                <button type="button" className={buttonClass(!imageAttrs.crop)} onClick={clearImageCrop} title="Remove crop">
+                                <button type="button" className={buttonClass(!imageAttrs.crop)} onMouseDown={(event) => event.preventDefault()} onClick={clearImageCrop} title="Remove crop">
                                     <span className="text-xs font-medium">No Crop</span>
                                 </button>
-                                <button type="button" className={buttonClass(imageAttrs.alignment === 'left' && !imageAttrs.wrap)} onClick={() => setImageAlignment('left')} title="Align picture left">
-                                    <span className="text-xs font-medium">Left</span>
+                                <button type="button" className={buttonClass(pictureAdvancedOpen)} onMouseDown={(event) => event.preventDefault()} onClick={() => setPictureAdvancedOpen((value) => !value)} title="Show more picture options">
+                                    <span className="text-xs font-medium">More</span>
                                 </button>
-                                <button type="button" className={buttonClass(imageAttrs.alignment === 'center' && !imageAttrs.wrap)} onClick={() => setImageAlignment('center')} title="Align picture center">
-                                    <span className="text-xs font-medium">Center</span>
-                                </button>
-                                <button type="button" className={buttonClass(imageAttrs.alignment === 'right' && !imageAttrs.wrap)} onClick={() => setImageAlignment('right')} title="Align picture right">
-                                    <span className="text-xs font-medium">Right</span>
-                                </button>
-                                <button type="button" className={buttonClass(imageAttrs.wrap === 'left')} onClick={() => setImageWrap('left')} title="Wrap text left of picture">
-                                    <span className="text-xs font-medium">Wrap L</span>
-                                </button>
-                                <button type="button" className={buttonClass(imageAttrs.wrap === 'right')} onClick={() => setImageWrap('right')} title="Wrap text right of picture">
-                                    <span className="text-xs font-medium">Wrap R</span>
-                                </button>
-                                <button type="button" className={buttonClass(!imageAttrs.alignment && !imageAttrs.wrap)} onClick={clearImageLayout} title="Clear picture layout">
-                                    <span className="text-xs font-medium">Reset</span>
-                                </button>
-                                <button type="button" className={buttonClass(imageAttrs.width === '240px')} onClick={() => setImageWidth('240px')} title="Small picture">
-                                    <span className="text-xs font-medium">S</span>
-                                </button>
-                                <button type="button" className={buttonClass(imageAttrs.width === '360px')} onClick={() => setImageWidth('360px')} title="Medium picture">
-                                    <span className="text-xs font-medium">M</span>
-                                </button>
-                                <button type="button" className={buttonClass(imageAttrs.width === '520px')} onClick={() => setImageWidth('520px')} title="Large picture">
-                                    <span className="text-xs font-medium">L</span>
-                                </button>
-                                <button type="button" className={buttonClass(imageAttrs.width === '100%')} onClick={() => setImageWidth('100%')} title="Full width picture">
-                                    <span className="text-xs font-medium">Full</span>
-                                </button>
-                                <button type="button" className={buttonClass(!imageAttrs.width)} onClick={clearImageWidth} title="Clear picture size">
-                                    <span className="text-xs font-medium">Auto</span>
-                                </button>
-                                <button type="button" className={buttonClass(false)} onClick={handleCustomImageWidth} title="Custom picture width">
-                                    <span className="text-xs font-medium">Custom</span>
-                                </button>
+                                {pictureAdvancedOpen ? (
+                                    <>
+                                        <button type="button" className={buttonClass(imageAttrs.alignment === 'left' && !imageAttrs.wrap)} onMouseDown={(event) => event.preventDefault()} onClick={() => setImageAlignment('left')} title="Align picture left">
+                                            <span className="text-xs font-medium">Left</span>
+                                        </button>
+                                        <button type="button" className={buttonClass(imageAttrs.alignment === 'center' && !imageAttrs.wrap)} onMouseDown={(event) => event.preventDefault()} onClick={() => setImageAlignment('center')} title="Align picture center">
+                                            <span className="text-xs font-medium">Center</span>
+                                        </button>
+                                        <button type="button" className={buttonClass(imageAttrs.alignment === 'right' && !imageAttrs.wrap)} onMouseDown={(event) => event.preventDefault()} onClick={() => setImageAlignment('right')} title="Align picture right">
+                                            <span className="text-xs font-medium">Right</span>
+                                        </button>
+                                        <button type="button" className={buttonClass(imageAttrs.wrap === 'left')} onMouseDown={(event) => event.preventDefault()} onClick={() => setImageWrap('left')} title="Wrap text left of picture">
+                                            <span className="text-xs font-medium">Wrap L</span>
+                                        </button>
+                                        <button type="button" className={buttonClass(imageAttrs.wrap === 'right')} onMouseDown={(event) => event.preventDefault()} onClick={() => setImageWrap('right')} title="Wrap text right of picture">
+                                            <span className="text-xs font-medium">Wrap R</span>
+                                        </button>
+                                        <button type="button" className={buttonClass(!imageAttrs.alignment && !imageAttrs.wrap)} onMouseDown={(event) => event.preventDefault()} onClick={clearImageLayout} title="Clear picture layout">
+                                            <span className="text-xs font-medium">Reset</span>
+                                        </button>
+                                        <button type="button" className={buttonClass(imageAttrs.width === '240px')} onMouseDown={(event) => event.preventDefault()} onClick={() => setImageWidth('240px')} title="Small picture">
+                                            <span className="text-xs font-medium">S</span>
+                                        </button>
+                                        <button type="button" className={buttonClass(imageAttrs.width === '360px')} onMouseDown={(event) => event.preventDefault()} onClick={() => setImageWidth('360px')} title="Medium picture">
+                                            <span className="text-xs font-medium">M</span>
+                                        </button>
+                                        <button type="button" className={buttonClass(imageAttrs.width === '520px')} onMouseDown={(event) => event.preventDefault()} onClick={() => setImageWidth('520px')} title="Large picture">
+                                            <span className="text-xs font-medium">L</span>
+                                        </button>
+                                        <button type="button" className={buttonClass(imageAttrs.width === '100%')} onMouseDown={(event) => event.preventDefault()} onClick={() => setImageWidth('100%')} title="Full width picture">
+                                            <span className="text-xs font-medium">Full</span>
+                                        </button>
+                                        <button type="button" className={buttonClass(!imageAttrs.width)} onMouseDown={(event) => event.preventDefault()} onClick={clearImageWidth} title="Clear picture size">
+                                            <span className="text-xs font-medium">Auto</span>
+                                        </button>
+                                        <button type="button" className={buttonClass(!!imageAttrs.width)} onMouseDown={(event) => event.preventDefault()} onClick={handleCustomImageWidth} title="Custom picture width">
+                                            <span className="text-xs font-medium">Custom</span>
+                                        </button>
+                                    </>
+                                ) : null}
                             </RibbonGroup>
                         ) : null}
 
-                        <RibbonGroup title="Table Tools">
-                            <button type="button" className={buttonClass(false)} onClick={() => tableAction('addColumnBefore')} title="Add column before">
-                                <span className="text-xs font-medium">Col Before</span>
-                            </button>
-                            <button type="button" className={buttonClass(false)} onClick={() => tableAction('addColumnAfter')} title="Add column after">
-                                <span className="text-xs font-medium">Col After</span>
-                            </button>
-                            <button type="button" className={buttonClass(false)} onClick={() => tableAction('addRowBefore')} title="Add row before">
-                                <span className="text-xs font-medium">Row Before</span>
-                            </button>
-                            <button type="button" className={buttonClass(false)} onClick={() => tableAction('addRowAfter')} title="Add row after">
-                                <span className="text-xs font-medium">Row After</span>
-                            </button>
-                            <button type="button" className={buttonClass(false)} onClick={() => tableAction('deleteRow')} title="Delete row">
-                                <span className="text-xs font-medium">Del Row</span>
-                            </button>
-                            <button type="button" className={buttonClass(false)} onClick={() => tableAction('deleteColumn')} title="Delete column">
-                                <span className="text-xs font-medium">Del Col</span>
-                            </button>
-                            <button type="button" className={buttonClass(false)} onClick={() => tableAction('deleteTable')} title="Delete table">
-                                <span className="text-xs font-medium">Del Table</span>
-                            </button>
-                            <button type="button" className={buttonClass(false)} onClick={() => tableAction('mergeCells')} title="Merge cells">
-                                <span className="text-xs font-medium">Merge</span>
-                            </button>
-                            <button type="button" className={buttonClass(false)} onClick={() => tableAction('splitCell')} title="Split cell">
-                                <span className="text-xs font-medium">Split</span>
-                            </button>
-                        </RibbonGroup>
+                        {tableIsActive ? (
+                            <RibbonGroup title="Table Tools">
+                                {tableBodyCellIsActive ? (
+                                    <>
+                                        <button type="button" className={buttonClass(tableCellIsActive)} onMouseDown={(event) => event.preventDefault()} onClick={() => tableAction('addColumnBefore')} title="Add column before">
+                                            <span className="text-xs font-medium">Col Before</span>
+                                        </button>
+                                        <button type="button" className={buttonClass(tableCellIsActive)} onMouseDown={(event) => event.preventDefault()} onClick={() => tableAction('addColumnAfter')} title="Add column after">
+                                            <span className="text-xs font-medium">Col After</span>
+                                        </button>
+                                        <button type="button" className={buttonClass(tableCellIsActive)} onMouseDown={(event) => event.preventDefault()} onClick={() => tableAction('addRowBefore')} title="Add row before">
+                                            <span className="text-xs font-medium">Row Before</span>
+                                        </button>
+                                        <button type="button" className={buttonClass(tableCellIsActive)} onMouseDown={(event) => event.preventDefault()} onClick={() => tableAction('addRowAfter')} title="Add row after">
+                                            <span className="text-xs font-medium">Row After</span>
+                                        </button>
+                                        <button type="button" className={buttonClass(tableCellIsActive)} onMouseDown={(event) => event.preventDefault()} onClick={() => tableAction('deleteRow')} title="Delete row">
+                                            <span className="text-xs font-medium">Del Row</span>
+                                        </button>
+                                        <button type="button" className={buttonClass(tableCellIsActive)} onMouseDown={(event) => event.preventDefault()} onClick={() => tableAction('deleteColumn')} title="Delete column">
+                                            <span className="text-xs font-medium">Del Col</span>
+                                        </button>
+                                    </>
+                                ) : null}
+                                <button type="button" className={buttonClass(true)} onMouseDown={(event) => event.preventDefault()} onClick={() => tableAction('deleteTable')} title="Delete table">
+                                    <span className="text-xs font-medium">Del Table</span>
+                                </button>
+                                {tableBodyCellIsActive ? (
+                                    <>
+                                        <button type="button" className={buttonClass(tableCellIsActive)} onMouseDown={(event) => event.preventDefault()} onClick={() => tableAction('mergeCells')} title="Merge cells">
+                                            <span className="text-xs font-medium">Merge</span>
+                                        </button>
+                                        <button type="button" className={buttonClass(tableCellIsActive)} onMouseDown={(event) => event.preventDefault()} onClick={() => tableAction('splitCell')} title="Split cell">
+                                            <span className="text-xs font-medium">Split</span>
+                                        </button>
+                                    </>
+                                ) : null}
+                                {tableHeaderIsActive ? (
+                                    <>
+                                        <button type="button" className={buttonClass(true)} onMouseDown={(event) => event.preventDefault()} onClick={() => tableAction('toggleHeaderRow')} title="Toggle header row">
+                                            <span className="text-xs font-medium">Header Row</span>
+                                        </button>
+                                        <button type="button" className={buttonClass(true)} onMouseDown={(event) => event.preventDefault()} onClick={() => tableAction('toggleHeaderColumn')} title="Toggle header column">
+                                            <span className="text-xs font-medium">Header Col</span>
+                                        </button>
+                                        <button type="button" className={buttonClass(true)} onMouseDown={(event) => event.preventDefault()} onClick={() => tableAction('toggleHeaderCell')} title="Toggle header cell">
+                                            <span className="text-xs font-medium">Header Cell</span>
+                                        </button>
+                                    </>
+                                ) : null}
+                            </RibbonGroup>
+                        ) : null}
                     </>
                 ) : null}
 
@@ -1159,22 +1232,27 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
                                     </div>
                                 ) : null}
                             </div>
-                            <div className="mt-3 flex flex-col gap-2">
-                                <textarea
-                                    className="min-h-20 w-64 rounded-xl border border-slate-200 bg-white p-2 text-sm text-slate-700"
-                                    placeholder="Write a comment note"
-                                    value={commentText}
-                                    onChange={(event) => setCommentText(event.target.value)}
-                                />
-                                <div className="flex gap-2">
-                                    <button type="button" className={buttonClass(false)} onClick={handleInsertComment} title="Insert comment note">
-                                        <span className="text-xs font-medium">Add Comment</span>
-                                    </button>
-                                    <button type="button" className={buttonClass(false)} onClick={handleFindReplace} title="Find and replace">
-                                        <span className="text-xs font-medium">Find/Replace</span>
-                                    </button>
+                            <button type="button" className={buttonClass(reviewAdvancedOpen)} onMouseDown={(event) => event.preventDefault()} onClick={() => setReviewAdvancedOpen((value) => !value)} title="Show more review options">
+                                <span className="text-xs font-medium">More</span>
+                            </button>
+                            {reviewAdvancedOpen ? (
+                                <div className="mt-3 flex flex-col gap-2">
+                                    <textarea
+                                        className="min-h-20 w-64 rounded-xl border border-slate-200 bg-white p-2 text-sm text-slate-700"
+                                        placeholder="Write a comment note"
+                                        value={commentText}
+                                        onChange={(event) => setCommentText(event.target.value)}
+                                    />
+                                    <div className="flex gap-2">
+                                        <button type="button" className={buttonClass(false)} onClick={handleInsertComment} title="Insert comment note">
+                                            <span className="text-xs font-medium">Add Comment</span>
+                                        </button>
+                                        <button type="button" className={buttonClass(false)} onClick={handleFindReplace} title="Find and replace">
+                                            <span className="text-xs font-medium">Find/Replace</span>
+                                        </button>
+                                    </div>
                                 </div>
-                            </div>
+                            ) : null}
                         </RibbonGroup>
                     </>
                 ) : null}
@@ -1419,11 +1497,11 @@ function CollaborativeEditor({ documentId }) {
     };
 
     return (
-        <div className="mx-auto mt-10 flex max-w-4xl flex-col rounded-lg border border-gray-300 shadow-lg relative max-h-[calc(100vh-5rem)] overflow-hidden">
+        <div className="mx-auto mt-10 flex max-w-6xl flex-col overflow-hidden rounded-[2rem] border border-slate-200/80 bg-gradient-to-br from-slate-100 via-slate-50 to-slate-200 shadow-[0_24px_80px_rgba(15,23,42,0.12)] relative max-h-[calc(100vh-5rem)]">
             {errorMessage ? (
                 <div className="p-6 text-red-700">{errorMessage}</div>
             ) : editor ? (
-                <div className="flex min-h-0 flex-1 flex-col p-4">
+                <div className="flex min-h-0 flex-1 flex-col p-3.5 sm:p-4">
                     <MenuBar
                         editor={editor}
                         onSave={handleSave}
@@ -1450,8 +1528,10 @@ function CollaborativeEditor({ documentId }) {
                             <div className="whitespace-pre-line text-sm">{aiResult.text}</div>
                         </div>
                     ) : null}
-                    <div className="mt-4 min-h-0 flex-1 overflow-y-auto rounded bg-white p-5">
-                        <EditorContent editor={editor} />
+                    <div className="mt-4 min-h-0 flex-1 overflow-y-auto rounded-[1.75rem] border border-slate-200/70 bg-gradient-to-b from-white to-slate-50 p-4 shadow-inner sm:p-6">
+                        <div className="editor-page-canvas mx-auto w-full max-w-[210mm] rounded-[1.5rem] border border-slate-200/80 bg-white px-4 py-5 shadow-[0_18px_50px_rgba(15,23,42,0.10)] ring-1 ring-white/60 sm:px-8 sm:py-8">
+                            <EditorContent editor={editor} />
+                        </div>
                     </div>
                 </div>
             ) : (
