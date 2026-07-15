@@ -1766,17 +1766,28 @@ function CollaborativeEditor({ documentId }) {
                         <div className="mb-3 text-sm text-slate-600">Generating AI response…</div>
                     ) : null}
                     {aiResult ? (
-                        <div className="mt-3 p-3 bg-gray-50 border rounded">
-                            <div className="font-semibold mb-2">
-                                {aiResult.action === 'summarize'
-                                    ? 'AI Summary'
-                                    : aiResult.action === 'improve'
-                                        ? 'Improved Writing'
-                                        : aiResult.action === 'tone'
-                                            ? 'Formal Tone Rewrite'
-                                            : 'Table/Chart Commentary'}
+                        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                            <div className="mb-2 flex items-start justify-between gap-3">
+                                <div className="font-semibold text-slate-900">
+                                    {aiResult.action === 'summarize'
+                                        ? 'AI Summary'
+                                        : aiResult.action === 'improve'
+                                            ? 'Improved Writing'
+                                            : aiResult.action === 'tone'
+                                                ? 'Formal Tone Rewrite'
+                                                : 'Table/Chart Commentary'}
+                                </div>
+                                <button
+                                    type="button"
+                                    className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-sm font-medium leading-none text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                                    onClick={() => setAiResult(null)}
+                                    title="Close AI response"
+                                    aria-label="Close AI response"
+                                >
+                                    ×
+                                </button>
                             </div>
-                            <div className="whitespace-pre-line text-sm">{aiResult.text}</div>
+                            <div className="whitespace-pre-line text-sm text-slate-700">{aiResult.text}</div>
                         </div>
                     ) : null}
                     <div className="mt-4 min-h-0 flex-1 overflow-y-auto rounded-[1.75rem] border border-slate-200/70 bg-gradient-to-b from-white to-slate-50 p-4 shadow-inner sm:p-6">
