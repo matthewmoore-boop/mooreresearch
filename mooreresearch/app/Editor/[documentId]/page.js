@@ -21,6 +21,7 @@ import TableCell from '@tiptap/extension-table-cell';
 import TableHeader from '@tiptap/extension-table-header';
 import CollaborationCursor from '@tiptap/extension-collaboration-cursor';
 import ReactCrop from 'react-image-crop';
+import { createPortal } from 'react-dom';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import { createClient } from '@supabase/supabase-js';
@@ -1045,8 +1046,8 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
                                     <span className="h-4 w-4 rounded border border-slate-300" style={{ backgroundColor: selectedTextColor }} />
                                     <span>Color</span>
                                 </button>
-                                {textColorMenuOpen ? (
-                                    <div className="fixed inset-0 z-50 flex justify-center px-3 pt-6" onMouseDown={() => setTextColorMenuOpen(false)}>
+                                {textColorMenuOpen ? createPortal(
+                                    <div className="fixed inset-0 z-[120] flex justify-center px-3 pt-6" onMouseDown={() => setTextColorMenuOpen(false)}>
                                         <div
                                             className="rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl"
                                             style={{ width: 'min(288px, calc(100vw - 24px))' }}
@@ -1180,7 +1181,8 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
                                                 </div>
                                             </div>
                                         </div>
-                                    </div>
+                                    </div>,
+                                    document.body
                                 ) : null}
                             </div>
 
