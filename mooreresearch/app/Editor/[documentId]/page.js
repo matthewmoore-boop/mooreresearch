@@ -532,7 +532,7 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
     );
 
     const RibbonGroup = ({ title, children, className = '' }) => (
-        <div className={`min-w-0 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm ${className}`}>
+        <div className={`min-w-0 shrink-0 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm ${className}`}>
             <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">{title}</div>
             <div className="flex flex-wrap items-center gap-1.5">{children}</div>
         </div>
@@ -800,7 +800,7 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
     ];
 
     return (
-        <div className="sticky top-0 z-30 mb-4 overflow-hidden rounded-3xl border border-slate-200/80 bg-gradient-to-b from-slate-100/95 via-slate-100/90 to-slate-50/95 p-2.5 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-slate-100/85">
+        <div className="sticky top-0 z-30 mb-4 overflow-visible rounded-3xl border border-slate-200/80 bg-gradient-to-b from-slate-100/95 via-slate-100/90 to-slate-50/95 p-2.5 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-slate-100/85">
             <div className="-mx-2.5 -mt-2.5 mb-2 flex flex-wrap items-center justify-between gap-2.5 border-b border-slate-200/60 bg-white/60 px-2.5 pb-1.5 pt-2 backdrop-blur-sm">
                 <div className="flex items-center gap-1.5">
                     <div className="relative">
@@ -890,7 +890,7 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
                 </div>
             </div>
 
-            <div className="flex flex-wrap items-stretch gap-2.5 px-0.5 pb-0.5">
+            <div className="flex items-stretch gap-2.5 overflow-x-auto px-0.5 pb-1">
                 {activeTab === 'home' ? (
                     <>
                         <RibbonGroup title="Clipboard">
