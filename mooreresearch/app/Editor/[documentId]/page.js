@@ -56,6 +56,7 @@ const getRandomColor = () => colors[Math.floor(Math.random() * colors.length)];
 const DRAFT_STORAGE_KEY = 'mooreresearch-doc-draft';
 const FONT_OPTIONS = ['Arial', 'Calibri', 'Cambria', 'Georgia', 'Garamond', 'Times New Roman', 'Verdana'];
 const FONT_SIZE_OPTIONS = ['4', '6', '8', '10', '12', '14', '16', '18', '20', '24', '28', '32', '36', '40', '48', '56', '64', '72'];
+const COLLABORATION_SERVER_URL = process.env.NEXT_PUBLIC_YJS_WEBSOCKET_URL || '';
 
 function normalizeFontFamily(fontFamily) {
     if (!fontFamily) {
@@ -1370,12 +1371,17 @@ function CollaborativeEditor({ documentId }) {
 
             setDocId(data.id);
 
-            providerInstance = new WebsocketProvider(
-                'wss://demos.yjs.dev',
-                `mooreresearch-collab-room-${data.id}`,
-                ydoc
-            );
-            setProvider(providerInstance);
+            if (COLLABORATION_SERVER_URL) {
+                providerInstance = new WebsocketProvider(
+                    COLLABORATION_SERVER_URL,
+                    `mooreresearch-collab-room-${data.id}`,
+                    ydoc
+                );
+                setProvider(providerInstance);
+            } else {
+                setProvider(null);
+                console.info('Collaboration websocket disabled because NEXT_PUBLIC_YJS_WEBSOCKET_URL is not configured.');
+            }
 
             if (editor) {
                 const dbContent = parseContentJson(data.content_json) || '<p>Start typing...</p>';
