@@ -520,6 +520,7 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
     const [textColorMenuOpen, setTextColorMenuOpen] = useState(false);
     const [customColorOpen, setCustomColorOpen] = useState(false);
     const [customColorValue, setCustomColorValue] = useState('#1D4ED8');
+    const copilotMenuRef = useRef(null);
 
     const imageIsActive = editor.isActive('image');
     useEffect(() => {
@@ -556,6 +557,21 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
         document.addEventListener('mousedown', handlePointerDown);
         return () => document.removeEventListener('mousedown', handlePointerDown);
     }, [textColorMenuOpen]);
+
+    useEffect(() => {
+        if (!copilotOpen) {
+            return;
+        }
+
+        const handlePointerDown = (event) => {
+            if (copilotMenuRef.current && !copilotMenuRef.current.contains(event.target)) {
+                setCopilotOpen(false);
+            }
+        };
+
+        document.addEventListener('mousedown', handlePointerDown);
+        return () => document.removeEventListener('mousedown', handlePointerDown);
+    }, [copilotOpen, setCopilotOpen]);
 
     if (!editor) return null;
 
@@ -1389,29 +1405,35 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
                 {activeTab === 'review' ? (
                     <>
                         <RibbonGroup title="Review">
-                            <div className="relative">
+                            <div className="relative" ref={copilotMenuRef}>
                                 <button
                                     type="button"
-                                    className={buttonClass(false)}
+                                    className={buttonClass(copilotOpen)}
                                     onClick={() => setCopilotOpen((value) => !value)}
                                     title="AI Co-Pilot"
                                     disabled={coPilotLoading}
                                 >
-                                    <MdSummarize className="h-4 w-4" />
+                                    <span className="inline-flex items-center gap-1.5">
+                                        <MdSummarize className="h-4 w-4" />
+                                        <span className="text-xs font-medium">AI Co-Pilot</span>
+                                    </span>
                                 </button>
                                 {copilotOpen ? (
-                                    <div className="absolute right-0 z-20 mt-2 w-64 rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
+                                    <div className="absolute right-0 top-full z-50 mt-2 w-72 overflow-hidden rounded-xl border border-slate-200 bg-white p-2 shadow-2xl">
+                                        <div className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Choose an action</div>
                                         {aiOptions.map((option) => (
                                             <button
                                                 key={option.key}
                                                 type="button"
-                                                className="flex w-full items-start rounded px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                                                className="flex w-full items-start rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
                                                 onClick={() => {
                                                     onCoPilotAction(option.key);
                                                     setCopilotOpen(false);
                                                 }}
                                             >
-                                                <span className="font-medium">{option.label}</span>
+                                                <span>
+                                                    <span className="font-medium">{option.label}</span>
+                                                </span>
                                             </button>
                                         ))}
                                     </div>
