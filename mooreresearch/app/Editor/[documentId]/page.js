@@ -1033,7 +1033,7 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
                                         const nextOpen = !textColorMenuOpen;
                                         if (nextOpen) {
                                             const rect = event.currentTarget.getBoundingClientRect();
-                                            const panelWidth = Math.min(288, window.innerWidth - 24);
+                                            const panelWidth = Math.min(248, window.innerWidth - 24);
                                             setTextColorMenuPosition({
                                                 top: Math.min(rect.bottom + 8, window.innerHeight - 24),
                                                 left: Math.max(12, Math.min(rect.left, window.innerWidth - panelWidth - 12)),
@@ -1047,10 +1047,16 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
                                     <span>Color</span>
                                 </button>
                                 {textColorMenuOpen ? createPortal(
-                                    <div className="fixed inset-0 z-[120] flex justify-center px-3 pt-6" onMouseDown={() => setTextColorMenuOpen(false)}>
+                                    <div className="fixed inset-0 z-[120]" onMouseDown={() => setTextColorMenuOpen(false)}>
                                         <div
-                                            className="rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl"
-                                            style={{ width: 'min(288px, calc(100vw - 24px))' }}
+                                            className="overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-2xl"
+                                            style={{
+                                                position: 'fixed',
+                                                top: `${textColorMenuPosition.top}px`,
+                                                left: `${textColorMenuPosition.left}px`,
+                                                width: 'min(248px, calc(100vw - 24px))',
+                                                maxHeight: 'calc(100vh - 24px)',
+                                            }}
                                             onMouseDown={(event) => event.stopPropagation()}
                                         >
                                             <div className="flex items-center justify-between gap-1">
@@ -1081,7 +1087,7 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
                                             </div>
 
                                             {customColorOpen ? (
-                                                <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+                                                <div className="mt-1.5 rounded-lg border border-slate-200 bg-slate-50 p-2">
                                                     <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Custom</div>
                                                     <div className="flex flex-wrap items-center gap-1">
                                                         <input
@@ -1130,12 +1136,12 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
                                                 </div>
                                             ) : null}
 
-                                            <div className="mt-2 border-t border-slate-200 pt-2">
+                                            <div className="mt-1.5 border-t border-slate-200 pt-1.5">
                                                 <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Theme</div>
-                                                <div className="flex flex-col gap-1">
+                                                <div className="flex flex-col gap-0.5">
                                                     {THEME_TEXT_PALETTE.map((row) => (
                                                         <div key={row.label} className="flex items-center gap-1">
-                                                            <span className="w-10 shrink-0 text-[9px] font-medium uppercase tracking-wide text-slate-400">{row.label}</span>
+                                                            <span className="w-8 shrink-0 text-[8px] font-medium uppercase tracking-wide text-slate-400">{row.label}</span>
                                                             <div className="flex flex-wrap items-center gap-0.5">
                                                                 {row.colors.map((color) => (
                                                                     <button
@@ -1159,7 +1165,7 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
                                                 </div>
                                             </div>
 
-                                            <div className="mt-2 border-t border-slate-200 pt-2">
+                                            <div className="mt-1.5 border-t border-slate-200 pt-1.5">
                                                 <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Std</div>
                                                 <div className="flex flex-wrap items-center gap-0.5">
                                                     {DEFAULT_TEXT_COLORS.map((color) => (
