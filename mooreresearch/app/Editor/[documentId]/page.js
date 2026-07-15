@@ -1032,7 +1032,7 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
                                         const nextOpen = !textColorMenuOpen;
                                         if (nextOpen) {
                                             const rect = event.currentTarget.getBoundingClientRect();
-                                            const panelWidth = 288;
+                                            const panelWidth = Math.min(288, window.innerWidth - 24);
                                             setTextColorMenuPosition({
                                                 top: Math.min(rect.bottom + 8, window.innerHeight - 24),
                                                 left: Math.max(12, Math.min(rect.left, window.innerWidth - panelWidth - 12)),
@@ -1048,8 +1048,8 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
                                 {textColorMenuOpen ? (
                                     <div className="fixed inset-0 z-50" onMouseDown={() => setTextColorMenuOpen(false)}>
                                         <div
-                                            className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl"
-                                            style={{ position: 'fixed', top: `${textColorMenuPosition.top}px`, left: `${textColorMenuPosition.left}px`, width: '18rem', maxHeight: 'calc(100vh - 24px)' }}
+                                            className="overflow-y-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl"
+                                            style={{ position: 'fixed', top: `${textColorMenuPosition.top}px`, left: `${textColorMenuPosition.left}px`, width: 'min(288px, calc(100vw - 24px))', maxHeight: 'calc(100vh - 24px)' }}
                                             onMouseDown={(event) => event.stopPropagation()}
                                         >
                                             <div className="flex items-center justify-between gap-1">
