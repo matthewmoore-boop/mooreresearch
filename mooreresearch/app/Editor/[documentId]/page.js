@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import { Extension } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
@@ -20,6 +20,7 @@ import TableRow from '@tiptap/extension-table-row';
 import TableCell from '@tiptap/extension-table-cell';
 import TableHeader from '@tiptap/extension-table-header';
 import CollaborationCursor from '@tiptap/extension-collaboration-cursor';
+import ReactCrop from 'react-image-crop';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import { createClient } from '@supabase/supabase-js';
@@ -97,6 +98,56 @@ function toSizeInputValue(fontSize) {
     return match ? match[1] : String(fontSize);
 }
 //const DOCUMENT_ID_TO_LOAD = 'c63d1b04-aadf-4251-871a-bc5a7da82fe8';
+
+function drawCroppedImage(image, canvas, crop) {
+    if (!image || !canvas || !crop) {
+        return;
+    }
+
+    const scaleX = image.naturalWidth / image.width;
+    const scaleY = image.naturalHeight / image.height;
+    const pixelRatio = window.devicePixelRatio || 1;
+    const outputWidth = Math.max(1, Math.floor(crop.width * pixelRatio));
+    const outputHeight = Math.max(1, Math.floor(crop.height * pixelRatio));
+
+    canvas.width = outputWidth;
+    canvas.height = outputHeight;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+        return;
+    }
+
+    ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(
+        image,
+        crop.x * scaleX,
+        crop.y * scaleY,
+        crop.width * scaleX,
+        crop.height * scaleY,
+        0,
+        0,
+        crop.width,
+        crop.height
+    );
+}
+
+function percentCropToPixelCrop(image, crop) {
+    if (!image || !crop) {
+        return null;
+    }
+
+    return {
+        unit: 'px',
+        x: (crop.x / 100) * image.width,
+        y: (crop.y / 100) * image.height,
+        width: (crop.width / 100) * image.width,
+        height: (crop.height / 100) * image.height,
+    };
+}
 
 const FontFamily = Extension.create({
     name: 'fontFamily',
@@ -178,6 +229,219 @@ const FontSize = Extension.create({
     },
 });
 
+const StyledImage = Image.extend({
+    addAttributes() {
+        return {
+            ...this.parent?.(),
+            width: {
+                default: null,
+                parseHTML: (element) => element.getAttribute('data-width') || element.style.width || null,
+                renderHTML: (attributes) => {
+                    if (!attributes.width) {
+                        return {};
+                    }
+
+                    return {
+                        'data-width': attributes.width,
+                        style: `width: ${attributes.width}; max-width: 100%; height: auto;`,
+                    };
+                },
+            },
+            crop: {
+                default: null,
+                parseHTML: (element) => element.getAttribute('data-crop') || null,
+                renderHTML: (attributes) => {
+                    if (!attributes.crop) {
+                        return {};
+                    }
+
+                    const cropStyles = {
+                        square: 'height: 360px; object-fit: cover; object-position: center center; overflow: hidden;',
+                        widescreen: 'height: 225px; object-fit: cover; object-position: center center; overflow: hidden;',
+                        portrait: 'height: 480px; object-fit: cover; object-position: center center; overflow: hidden;',
+                    };
+
+                    return {
+                        'data-crop': attributes.crop,
+                        style: cropStyles[attributes.crop] || 'height: 360px; object-fit: cover; object-position: center center; overflow: hidden;',
+                    };
+                },
+            },
+            alignment: {
+                default: null,
+                parseHTML: (element) => element.getAttribute('data-alignment') || null,
+                renderHTML: (attributes) => {
+                    if (!attributes.alignment) {
+                        return {};
+                    }
+
+                    if (attributes.alignment === 'center') {
+                        return {
+                            'data-alignment': 'center',
+                            style: 'display: block; margin-left: auto; margin-right: auto;',
+                        };
+                    }
+
+                    if (attributes.alignment === 'right') {
+                        return {
+                            'data-alignment': 'right',
+                            style: 'display: block; margin-left: auto; margin-right: 0;',
+                        };
+                    }
+
+                    return {
+                        'data-alignment': 'left',
+                        style: 'display: block; margin-left: 0; margin-right: auto;',
+                    };
+                },
+            },
+            wrap: {
+                default: null,
+                parseHTML: (element) => element.getAttribute('data-wrap') || null,
+                renderHTML: (attributes) => {
+                    if (!attributes.wrap) {
+                        return {};
+                    }
+
+                    if (attributes.wrap === 'left') {
+                        return {
+                            'data-wrap': 'left',
+                            style: 'float: left; margin: 0.25rem 1rem 0.75rem 0;',
+                        };
+                    }
+
+                    if (attributes.wrap === 'right') {
+                        return {
+                            'data-wrap': 'right',
+                            style: 'float: right; margin: 0.25rem 0 0.75rem 1rem;',
+                        };
+                    }
+
+                    return {
+                        'data-wrap': 'none',
+                        style: 'float: none; clear: both; margin: 0.75rem auto;',
+                    };
+                },
+            },
+        };
+    },
+});
+
+function ImageCropDialog({ open, src, onClose, onSave }) {
+    const imageRef = useRef(null);
+    const previewCanvasRef = useRef(null);
+    const [crop, setCrop] = useState();
+    const [completedCrop, setCompletedCrop] = useState(null);
+    const [saving, setSaving] = useState(false);
+    const [errorMessage, setErrorMessage] = useState('');
+
+    useEffect(() => {
+        if (!open || !src) {
+            setCrop(undefined);
+            setCompletedCrop(null);
+            setSaving(false);
+            setErrorMessage('');
+            return;
+        }
+
+        setCrop({ unit: '%', x: 10, y: 10, width: 80, height: 80 });
+        setCompletedCrop(null);
+        setSaving(false);
+        setErrorMessage('');
+    }, [open, src]);
+
+    useEffect(() => {
+        if (!completedCrop || !imageRef.current || !previewCanvasRef.current) {
+            return;
+        }
+
+        try {
+            drawCroppedImage(imageRef.current, previewCanvasRef.current, completedCrop);
+        } catch (error) {
+            console.warn('Unable to update crop preview', error);
+        }
+    }, [completedCrop]);
+
+    if (!open || !src) {
+        return null;
+    }
+
+    const handleSave = async () => {
+        if (!imageRef.current || !previewCanvasRef.current || !completedCrop) {
+            setErrorMessage('Please select a crop area first.');
+            return;
+        }
+
+        try {
+            setSaving(true);
+            drawCroppedImage(imageRef.current, previewCanvasRef.current, completedCrop);
+            const croppedDataUrl = previewCanvasRef.current.toDataURL('image/png');
+            onSave(croppedDataUrl);
+            onClose();
+        } catch (error) {
+            console.error('Image crop failed', error);
+            setErrorMessage('Cropping failed. The source image may block canvas export.');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
+            <div className="w-full max-w-5xl rounded-3xl bg-white shadow-2xl">
+                <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+                    <div>
+                        <div className="text-base font-semibold text-slate-900">Crop Picture</div>
+                        <div className="text-sm text-slate-500">Drag the handles to choose the crop area.</div>
+                    </div>
+                    <button type="button" className="rounded-full border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50" onClick={onClose}>
+                        Close
+                    </button>
+                </div>
+                <div className="grid gap-4 p-5 lg:grid-cols-[minmax(0,1fr)_260px]">
+                    <div className="overflow-auto rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                        <ReactCrop crop={crop} onChange={(_, percentCrop) => setCrop(percentCrop)} onComplete={(pixelCrop) => setCompletedCrop(pixelCrop)} keepSelection>
+                            <img
+                                ref={imageRef}
+                                src={src}
+                                alt="Crop source"
+                                crossOrigin="anonymous"
+                                className="max-h-[70vh] w-auto max-w-full"
+                                onLoad={() => {
+                                    const nextCrop = { unit: '%', x: 10, y: 10, width: 80, height: 80 };
+                                    setCrop(nextCrop);
+
+                                    if (imageRef.current && previewCanvasRef.current) {
+                                        const pixelCrop = percentCropToPixelCrop(imageRef.current, nextCrop);
+                                        if (pixelCrop) {
+                                            setCompletedCrop(pixelCrop);
+                                        }
+                                    }
+                                }}
+                            />
+                        </ReactCrop>
+                    </div>
+                    <div className="flex flex-col gap-3">
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                            <div className="mb-2 text-sm font-semibold text-slate-900">Preview</div>
+                            <canvas ref={previewCanvasRef} className="h-auto w-full rounded-lg border border-slate-200 bg-white" />
+                        </div>
+                        {errorMessage ? <div className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessage}</div> : null}
+                        <div className="mt-auto flex gap-2">
+                            <button type="button" className="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50" onClick={onClose}>
+                                Cancel
+                            </button>
+                            <button type="button" className="flex-1 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50" onClick={handleSave} disabled={saving}>
+                                {saving ? 'Saving...' : 'Apply Crop'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 function parseContentJson(value) {
     if (typeof value === 'string') {
         try {
@@ -190,24 +454,57 @@ function parseContentJson(value) {
     return value;
 }
 
-function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen, coPilotLoading }) {
+function replaceTextNodes(node, findValue, replaceValue) {
+    if (Array.isArray(node)) {
+        return node.map((child) => replaceTextNodes(child, findValue, replaceValue));
+    }
+
+    if (!node || typeof node !== 'object') {
+        return node;
+    }
+
+    const nextNode = { ...node };
+
+    if (typeof nextNode.text === 'string') {
+        const escapedFind = findValue.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        nextNode.text = nextNode.text.replace(new RegExp(escapedFind, 'gi'), replaceValue);
+    }
+
+    if (Array.isArray(nextNode.content)) {
+        nextNode.content = nextNode.content.map((child) => replaceTextNodes(child, findValue, replaceValue));
+    }
+
+    return nextNode;
+}
+
+function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen, coPilotLoading, currentUser }) {
+    const [fileMenuOpen, setFileMenuOpen] = useState(false);
+    const [activeTab, setActiveTab] = useState('home');
+    const [commentText, setCommentText] = useState('');
+    const [cropDialogOpen, setCropDialogOpen] = useState(false);
+    const [cropSource, setCropSource] = useState('');
+    const imageUploadRef = useRef(null);
+
     if (!editor) return null;
 
     const buttonClass = (active) =>
-        `mr-1 mb-1 p-2 rounded border flex items-center justify-center ${active ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`;
+        `inline-flex items-center justify-center rounded-lg border px-2.5 py-2 text-xs font-medium transition ${active ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`;
 
     const ribbonButtonClass = (active) =>
         `inline-flex items-center justify-center rounded-lg border px-2.5 py-2 text-xs font-medium transition ${active ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`;
 
-    const btn = (onClick, active, label, Icon) => (
-        <button type="button" onClick={onClick} className={buttonClass(active)} title={label}>
-            {Icon ? <Icon className="h-4 w-4" /> : null}
-        </button>
-    );
-
     const ribbonBtn = (onClick, active, label, content) => (
         <button type="button" onClick={onClick} className={ribbonButtonClass(active)} title={label}>
             {content}
+        </button>
+    );
+
+    const ribbonIconButton = (onClick, active, label, Icon, text) => (
+        <button type="button" onClick={onClick} className={ribbonButtonClass(active)} title={label}>
+            <span className="inline-flex items-center gap-1.5">
+                {Icon ? <Icon className="h-3.5 w-3.5" /> : null}
+                <span>{text}</span>
+            </span>
         </button>
     );
 
@@ -221,6 +518,8 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
     const selectedFontFamily = normalizeFontFamily(editor.getAttributes('textStyle').fontFamily);
     const selectedFontSize = editor.getAttributes('textStyle').fontSize || '';
     const selectedTextColor = editor.getAttributes('textStyle').color || '#111827';
+    const imageIsActive = editor.isActive('image');
+    const imageAttrs = editor.getAttributes('image') || {};
 
     const handleCopy = async () => {
         const { from, to } = editor.state.selection;
@@ -272,6 +571,188 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
         editor.chain().focus().unsetAllMarks().clearNodes().run();
     };
 
+    const handleInsertPageBreak = () => {
+        if (editor.can().setHorizontalRule()) {
+            editor.chain().focus().setHorizontalRule().run();
+            return;
+        }
+
+        editor.chain().focus().insertContent('<hr />').run();
+    };
+
+    const handleInsertImageUrl = () => {
+        const url = window.prompt('Enter image URL');
+        if (url) {
+            editor.chain().focus().setImage({ src: url }).run();
+        }
+    };
+
+    const handleImageUpload = (event) => {
+        const file = event.target.files?.[0];
+        if (!file) {
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = () => {
+            const src = typeof reader.result === 'string' ? reader.result : '';
+            if (src) {
+                editor.chain().focus().setImage({ src }).run();
+            }
+        };
+        reader.readAsDataURL(file);
+        event.target.value = '';
+    };
+
+    const handleReplaceImageUrl = () => {
+        const url = window.prompt('Enter replacement image URL');
+        if (url) {
+            editor.chain().focus().updateAttributes('image', { src: url }).run();
+        }
+    };
+
+    const handleDeleteImage = () => {
+        editor.chain().focus().deleteNode('image').run();
+    };
+
+    const handleOpenCropDialog = () => {
+        const src = imageAttrs.src;
+        if (!src) {
+            return;
+        }
+
+        setCropSource(src);
+        setCropDialogOpen(true);
+    };
+
+    const handleApplyCroppedImage = (croppedSrc) => {
+        editor.chain().focus().updateAttributes('image', { src: croppedSrc, crop: null }).run();
+    };
+
+    const setImageAlignment = (alignment) => {
+        editor.chain().focus().updateAttributes('image', { alignment, wrap: null }).run();
+    };
+
+    const setImageWrap = (wrap) => {
+        editor.chain().focus().updateAttributes('image', { wrap, alignment: null }).run();
+    };
+
+    const clearImageLayout = () => {
+        editor.chain().focus().updateAttributes('image', { alignment: null, wrap: null }).run();
+    };
+
+    const setImageWidth = (width) => {
+        editor.chain().focus().updateAttributes('image', { width }).run();
+    };
+
+    const setImageCrop = (crop) => {
+        editor.chain().focus().updateAttributes('image', { crop, wrap: null, alignment: null }).run();
+    };
+
+    const handleCustomImageWidth = () => {
+        const width = window.prompt('Enter image width (for example 320px or 60%)');
+        if (width && width.trim()) {
+            setImageWidth(width.trim());
+        }
+    };
+
+    const clearImageWidth = () => {
+        editor.chain().focus().updateAttributes('image', { width: null }).run();
+    };
+
+    const clearImageCrop = () => {
+        editor.chain().focus().updateAttributes('image', { crop: null }).run();
+    };
+
+    const insertTable = (rows, cols) => {
+        editor.chain().focus().insertTable({ rows, cols, withHeaderRow: true }).run();
+    };
+
+    const tableAction = (commandName) => {
+        const chain = editor.chain().focus();
+
+        if (typeof chain[commandName] === 'function') {
+            chain[commandName]().run();
+        }
+    };
+
+    const handleInsertComment = () => {
+        const note = commentText.trim() || window.prompt('Enter comment')?.trim() || '';
+        if (!note) {
+            return;
+        }
+
+        const timestamp = new Date().toLocaleString();
+        const authorName = currentUser?.name || 'Reviewer';
+
+        const commentBlock = {
+            type: 'blockquote',
+            content: [
+                {
+                    type: 'paragraph',
+                    content: [
+                        {
+                            type: 'text',
+                            text: 'Comment',
+                            marks: [{ type: 'bold' }],
+                        },
+                        { type: 'text', text: ` · ${timestamp}` },
+                    ],
+                },
+                {
+                    type: 'paragraph',
+                    content: [
+                        { type: 'text', text: note },
+                    ],
+                },
+                {
+                    type: 'paragraph',
+                    content: [
+                        { type: 'text', text: `${authorName} · ${timestamp}` },
+                    ],
+                },
+            ],
+        };
+
+        editor.chain().focus().insertContent([commentBlock, { type: 'paragraph' }]).run();
+        setCommentText('');
+    };
+
+    const handleFindReplace = () => {
+        const findValue = window.prompt('Find what?');
+        if (!findValue) {
+            return;
+        }
+
+        const replaceValue = window.prompt('Replace with? Leave blank to just find');
+        const docText = editor.getText();
+
+        if (replaceValue === null) {
+            return;
+        }
+
+        if (replaceValue === '') {
+            const firstIndex = docText.toLowerCase().indexOf(findValue.toLowerCase());
+            if (firstIndex >= 0) {
+                alert(`Found "${findValue}" at character ${firstIndex + 1}.`);
+            } else {
+                alert(`No match for "${findValue}".`);
+            }
+            return;
+        }
+
+        const currentDoc = editor.getJSON();
+        const updatedDoc = replaceTextNodes(currentDoc, findValue, replaceValue);
+
+        if (JSON.stringify(updatedDoc) === JSON.stringify(currentDoc)) {
+            alert(`No match for "${findValue}".`);
+            return;
+        }
+
+        editor.commands.setContent(updatedDoc);
+        alert(`Replaced occurrences of "${findValue}".`);
+    };
+
     const applyFontSize = (rawValue) => {
         const normalizedSize = normalizeFontSize(rawValue);
 
@@ -293,188 +774,75 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
     ];
 
     return (
-        <div className="mb-4 rounded-3xl border border-slate-200 bg-slate-100 p-3 shadow-sm">
-            <div className="mb-3 flex flex-wrap items-center gap-2 border-b border-slate-200 pb-2">
-                <div className="rounded-full bg-slate-900 px-4 py-1.5 text-sm font-semibold text-white">Home</div>
-                <div className="rounded-full px-4 py-1.5 text-sm font-medium text-slate-500">Insert</div>
-                <div className="rounded-full px-4 py-1.5 text-sm font-medium text-slate-500">Review</div>
-            </div>
-
-            <div className="flex flex-wrap items-stretch gap-3">
-                <RibbonGroup title="Clipboard">
-                    {ribbonBtn(() => handleCut(), false, 'Cut', <span>Cut</span>)}
-                    {ribbonBtn(() => handleCopy(), false, 'Copy', <span>Copy</span>)}
-                    {ribbonBtn(() => handlePaste(), false, 'Paste', <span>Paste</span>)}
-                    {ribbonBtn(() => editor.chain().focus().undo().run(), false, 'Undo', <span>Undo</span>)}
-                    {ribbonBtn(() => editor.chain().focus().redo().run(), false, 'Redo', <span>Redo</span>)}
-                </RibbonGroup>
-
-                <RibbonGroup title="Font" className="flex-1 min-w-[320px]">
-                    <input
-                        key={selectedFontFamily || 'font-family-empty'}
-                        list="font-family-options"
-                        className="h-9 w-36 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700"
-                        defaultValue={selectedFontFamily}
-                        placeholder="Font"
-                        title="Font Family"
-                        onBlur={(event) => {
-                            const fontFamily = normalizeFontFamily(event.target.value);
-                            if (fontFamily) {
-                                editor.chain().focus().setFontFamily(fontFamily).run();
-                            } else {
-                                editor.chain().focus().unsetFontFamily().run();
-                            }
-                        }}
-                        onKeyDown={(event) => {
-                            if (event.key === 'Enter') {
-                                event.preventDefault();
-                                const fontFamily = normalizeFontFamily(event.currentTarget.value);
-                                if (fontFamily) {
-                                    editor.chain().focus().setFontFamily(fontFamily).run();
-                                } else {
-                                    editor.chain().focus().unsetFontFamily().run();
-                                }
-                                event.currentTarget.blur();
-                            }
-                        }}
-                    />
-                    <datalist id="font-family-options">
-                        {FONT_OPTIONS.map((font) => (
-                            <option key={font} value={font} />
-                        ))}
-                    </datalist>
-
-                    <input
-                        key={selectedFontSize || 'font-size-empty'}
-                        list="font-size-options"
-                        className="h-9 w-20 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700"
-                        defaultValue={toSizeInputValue(selectedFontSize)}
-                        placeholder="Size"
-                        title="Font Size (type a number for pt, or include units like px/pt)"
-                        onBlur={(event) => applyFontSize(event.target.value)}
-                        onKeyDown={(event) => {
-                            if (event.key === 'Enter') {
-                                event.preventDefault();
-                                applyFontSize(event.currentTarget.value);
-                                event.currentTarget.blur();
-                            }
-                        }}
-                    />
-                    <datalist id="font-size-options">
-                        {FONT_SIZE_OPTIONS.map((size) => (
-                            <option key={size} value={size} />
-                        ))}
-                    </datalist>
-
-                    <input
-                        type="color"
-                        className="h-9 w-10 cursor-pointer rounded-lg border border-slate-200 bg-white p-1"
-                        value={selectedTextColor}
-                        title="Text Color"
-                        onChange={(event) => {
-                            const color = event.target.value;
-                            editor.chain().focus().setColor(color).run();
-                        }}
-                    />
-
-                    {btn(() => editor.chain().focus().toggleBold().run(), editor.isActive('bold'), 'Bold', MdFormatBold)}
-                    {btn(() => editor.chain().focus().toggleItalic().run(), editor.isActive('italic'), 'Italic', MdFormatItalic)}
-                    {btn(() => editor.chain().focus().toggleUnderline().run(), editor.isActive('underline'), 'Underline', MdFormatUnderlined)}
-                    {btn(() => editor.chain().focus().toggleStrike().run(), editor.isActive('strike'), 'Strike', MdFormatStrikethrough)}
-                    {ribbonBtn(() => editor.chain().focus().toggleSubscript().run(), editor.isActive('subscript'), 'Subscript', <span className="text-sm">x₂</span>)}
-                    {ribbonBtn(() => editor.chain().focus().toggleSuperscript().run(), editor.isActive('superscript'), 'Superscript', <span className="text-sm">x²</span>)}
-                    {ribbonBtn(() => editor.chain().focus().toggleHighlight({ color: '#FCEF6D' }).run(), editor.isActive('highlight'), 'Highlight', <span>Highlighter</span>)}
-                    {ribbonBtn(() => handleClearFormatting(), false, 'Clear formatting', <span>Clear</span>)}
-                </RibbonGroup>
-
-                <RibbonGroup title="Paragraph">
-                    {ribbonBtn(() => editor.chain().focus().setParagraph().run(), editor.isActive('paragraph'), 'Paragraph', <span>Normal</span>)}
-                    {ribbonBtn(() => editor.chain().focus().toggleHeading({ level: 1 }).run(), editor.isActive('heading', { level: 1 }), 'H1', <span>H1</span>)}
-                    {ribbonBtn(() => editor.chain().focus().toggleHeading({ level: 2 }).run(), editor.isActive('heading', { level: 2 }), 'H2', <span>H2</span>)}
-                    {btn(() => editor.chain().focus().toggleBulletList().run(), editor.isActive('bulletList'), 'Bullet', MdFormatListBulleted)}
-                    {btn(() => editor.chain().focus().toggleOrderedList().run(), editor.isActive('orderedList'), 'Numbered', MdFormatListNumbered)}
-                    {ribbonBtn(() => editor.chain().focus().toggleBlockquote().run(), editor.isActive('blockquote'), 'Quote', <span>Quote</span>)}
-                    {btn(() => editor.chain().focus().setTextAlign('left').run(), editor.isActive({ textAlign: 'left' }), 'Left', MdFormatAlignLeft)}
-                    {btn(() => editor.chain().focus().setTextAlign('center').run(), editor.isActive({ textAlign: 'center' }), 'Center', MdFormatAlignCenter)}
-                    {btn(() => editor.chain().focus().setTextAlign('right').run(), editor.isActive({ textAlign: 'right' }), 'Right', MdFormatAlignRight)}
-                    {ribbonBtn(() => editor.chain().focus().setTextAlign('justify').run(), editor.isActive({ textAlign: 'justify' }), 'Justify', <span>Justify</span>)}
-                </RibbonGroup>
-
-                <RibbonGroup title="Insert">
-                    <button
-                        type="button"
-                        className={buttonClass(false)}
-                        onClick={() => {
-                            const href = window.prompt('Enter URL');
-                            if (href) {
-                                editor.chain().focus().extendMarkRange('link').setLink({ href }).run();
-                            }
-                        }}
-                        title="Link"
-                    >
-                        <MdLink className="h-4 w-4" />
-                    </button>
-                    <button
-                        type="button"
-                        className={buttonClass(false)}
-                        onClick={() => {
-                            const url = window.prompt('Enter image URL');
-                            if (url) {
-                                editor.chain().focus().setImage({ src: url }).run();
-                            }
-                        }}
-                        title="Image"
-                    >
-                        <MdImage className="h-4 w-4" />
-                    </button>
-                    <button
-                        type="button"
-                        className={buttonClass(false)}
-                        onClick={() => {
-                            editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
-                        }}
-                        title="Table"
-                    >
-                        <MdTableChart className="h-4 w-4" />
-                    </button>
-                </RibbonGroup>
-
-                <RibbonGroup title="Review">
+        <div className="sticky top-0 z-30 mb-4 rounded-3xl border border-slate-200 bg-slate-100/95 p-3 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-slate-100/85">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-2">
+                <div className="flex items-center gap-2">
                     <div className="relative">
                         <button
                             type="button"
-                            className={buttonClass(false)}
-                            onClick={() => setCopilotOpen((value) => !value)}
-                            title="AI Co-Pilot"
-                            disabled={coPilotLoading}
+                            onClick={() => setFileMenuOpen((value) => !value)}
+                            className="rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white"
                         >
-                            <MdSummarize className="h-4 w-4" />
+                            File
                         </button>
-                        {copilotOpen ? (
-                            <div className="absolute right-0 z-20 mt-2 w-64 rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
-                                {aiOptions.map((option) => (
-                                    <button
-                                        key={option.key}
-                                        type="button"
-                                        className="flex w-full items-start rounded px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
-                                        onClick={() => {
-                                            onCoPilotAction(option.key);
-                                            setCopilotOpen(false);
-                                        }}
-                                    >
-                                        <span className="font-medium">{option.label}</span>
-                                    </button>
-                                ))}
+                        {fileMenuOpen ? (
+                            <div className="absolute left-0 top-full z-40 mt-2 w-[28rem] overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
+                                <div className="grid grid-cols-[10rem_1fr]">
+                                    <div className="border-r border-slate-200 bg-slate-50 p-3">
+                                        <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Backstage</div>
+                                        <button type="button" className="mb-2 w-full rounded-2xl bg-slate-900 px-3 py-2 text-left text-sm font-semibold text-white" onClick={() => { onSave(); setFileMenuOpen(false); }}>
+                                            Save
+                                        </button>
+                                        <button type="button" className="mb-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-700" onClick={() => { handleCopy(); setFileMenuOpen(false); }}>
+                                            Copy
+                                        </button>
+                                        <button type="button" className="mb-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-700" onClick={() => { handlePaste(); setFileMenuOpen(false); }}>
+                                            Paste
+                                        </button>
+                                        <button type="button" className="mb-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-700" onClick={() => { handleClearFormatting(); setFileMenuOpen(false); }}>
+                                            Clear formatting
+                                        </button>
+                                    </div>
+                                    <div className="p-4">
+                                        <div className="text-sm font-semibold text-slate-900">Document actions</div>
+                                        <p className="mt-1 text-sm text-slate-600">Quick access to save and clipboard actions, plus formatting cleanup.</p>
+                                        <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+                                            This panel behaves like a small backstage view so the file actions are always one click away.
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         ) : null}
                     </div>
-                </RibbonGroup>
-
-                <div className="ml-auto flex items-start">
+                    <button
+                        type="button"
+                        onClick={() => setActiveTab('home')}
+                        className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${activeTab === 'home' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'}`}
+                    >
+                        Home
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setActiveTab('insert')}
+                        className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${activeTab === 'insert' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'}`}
+                    >
+                        Insert
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setActiveTab('review')}
+                        className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${activeTab === 'review' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'}`}
+                    >
+                        Review
+                    </button>
+                </div>
+                <div className="flex items-center gap-1">
+                    {ribbonBtn(() => editor.chain().focus().undo().run(), false, 'Undo', <span>Undo</span>)}
+                    {ribbonBtn(() => editor.chain().focus().redo().run(), false, 'Redo', <span>Redo</span>)}
                     <button
                         type="button"
                         onClick={onSave}
-                        className="inline-flex h-12 items-center justify-center rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
+                        className="ml-2 inline-flex h-10 items-center justify-center rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
                         title="Save to Database"
                     >
                         <MdSave className="mr-2 h-4 w-4" />
@@ -482,6 +850,345 @@ function MenuBar({ editor, onSave, onCoPilotAction, copilotOpen, setCopilotOpen,
                     </button>
                 </div>
             </div>
+
+            <div className="flex flex-wrap items-stretch gap-2.5">
+                {activeTab === 'home' ? (
+                    <>
+                        <RibbonGroup title="Clipboard">
+                            {ribbonIconButton(() => handleCut(), false, 'Cut', MdContentCopy, 'Cut')}
+                            {ribbonIconButton(() => handleCopy(), false, 'Copy', MdContentCopy, 'Copy')}
+                            {ribbonIconButton(() => handlePaste(), false, 'Paste', MdContentPaste, 'Paste')}
+                            {ribbonIconButton(() => editor.chain().focus().undo().run(), false, 'Undo', MdUndo, 'Undo')}
+                            {ribbonIconButton(() => editor.chain().focus().redo().run(), false, 'Redo', MdRedo, 'Redo')}
+                        </RibbonGroup>
+
+                        <div className="hidden self-stretch border-l border-slate-300 sm:block" aria-hidden="true" />
+
+                        <RibbonGroup title="Font" className="flex-1 min-w-[340px]">
+                            <input
+                                key={selectedFontFamily || 'font-family-empty'}
+                                list="font-family-options"
+                                className="h-9 w-36 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700"
+                                defaultValue={selectedFontFamily}
+                                placeholder="Font"
+                                title="Font Family"
+                                onBlur={(event) => {
+                                    const fontFamily = normalizeFontFamily(event.target.value);
+                                    if (fontFamily) {
+                                        editor.chain().focus().setFontFamily(fontFamily).run();
+                                    } else {
+                                        editor.chain().focus().unsetFontFamily().run();
+                                    }
+                                }}
+                                onKeyDown={(event) => {
+                                    if (event.key === 'Enter') {
+                                        event.preventDefault();
+                                        const fontFamily = normalizeFontFamily(event.currentTarget.value);
+                                        if (fontFamily) {
+                                            editor.chain().focus().setFontFamily(fontFamily).run();
+                                        } else {
+                                            editor.chain().focus().unsetFontFamily().run();
+                                        }
+                                        event.currentTarget.blur();
+                                    }
+                                }}
+                            />
+                            <datalist id="font-family-options">
+                                {FONT_OPTIONS.map((font) => (
+                                    <option key={font} value={font} />
+                                ))}
+                            </datalist>
+
+                            <input
+                                key={selectedFontSize || 'font-size-empty'}
+                                list="font-size-options"
+                                className="h-9 w-20 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700"
+                                defaultValue={toSizeInputValue(selectedFontSize)}
+                                placeholder="Size"
+                                title="Font Size (type a number for pt, or include units like px/pt)"
+                                onBlur={(event) => applyFontSize(event.target.value)}
+                                onKeyDown={(event) => {
+                                    if (event.key === 'Enter') {
+                                        event.preventDefault();
+                                        applyFontSize(event.currentTarget.value);
+                                        event.currentTarget.blur();
+                                    }
+                                }}
+                            />
+                            <datalist id="font-size-options">
+                                {FONT_SIZE_OPTIONS.map((size) => (
+                                    <option key={size} value={size} />
+                                ))}
+                            </datalist>
+
+                            <input
+                                type="color"
+                                className="h-9 w-10 cursor-pointer rounded-lg border border-slate-200 bg-white p-1"
+                                value={selectedTextColor}
+                                title="Text Color"
+                                onChange={(event) => {
+                                    const color = event.target.value;
+                                    editor.chain().focus().setColor(color).run();
+                                }}
+                            />
+
+                            {ribbonIconButton(() => editor.chain().focus().toggleBold().run(), editor.isActive('bold'), 'Bold', MdFormatBold, 'Bold')}
+                            {ribbonIconButton(() => editor.chain().focus().toggleItalic().run(), editor.isActive('italic'), 'Italic', MdFormatItalic, 'Italic')}
+                            {ribbonIconButton(() => editor.chain().focus().toggleUnderline().run(), editor.isActive('underline'), 'Underline', MdFormatUnderlined, 'Underline')}
+                            {ribbonIconButton(() => editor.chain().focus().toggleStrike().run(), editor.isActive('strike'), 'Strike', MdFormatStrikethrough, 'Strike')}
+                            {ribbonBtn(() => editor.chain().focus().toggleSubscript().run(), editor.isActive('subscript'), 'Subscript', <span className="text-sm">x₂</span>)}
+                            {ribbonBtn(() => editor.chain().focus().toggleSuperscript().run(), editor.isActive('superscript'), 'Superscript', <span className="text-sm">x²</span>)}
+                            {ribbonBtn(() => editor.chain().focus().toggleHighlight({ color: '#FCEF6D' }).run(), editor.isActive('highlight'), 'Highlight', <span>Highlighter</span>)}
+                            {ribbonBtn(() => handleClearFormatting(), false, 'Clear formatting', <span>Clear</span>)}
+                        </RibbonGroup>
+
+                        <div className="hidden self-stretch border-l border-slate-300 sm:block" aria-hidden="true" />
+
+                        <RibbonGroup title="Paragraph">
+                            {ribbonIconButton(() => editor.chain().focus().setParagraph().run(), editor.isActive('paragraph'), 'Paragraph', null, 'Normal')}
+                            {ribbonIconButton(() => editor.chain().focus().toggleHeading({ level: 1 }).run(), editor.isActive('heading', { level: 1 }), 'H1', null, 'H1')}
+                            {ribbonIconButton(() => editor.chain().focus().toggleHeading({ level: 2 }).run(), editor.isActive('heading', { level: 2 }), 'H2', null, 'H2')}
+                            {ribbonIconButton(() => editor.chain().focus().toggleBulletList().run(), editor.isActive('bulletList'), 'Bullet', MdFormatListBulleted, 'Bullets')}
+                            {ribbonIconButton(() => editor.chain().focus().toggleOrderedList().run(), editor.isActive('orderedList'), 'Numbered', MdFormatListNumbered, 'Numbering')}
+                            {ribbonBtn(() => editor.chain().focus().toggleBlockquote().run(), editor.isActive('blockquote'), 'Quote', <span>Quote</span>)}
+                            {ribbonIconButton(() => editor.chain().focus().setTextAlign('left').run(), editor.isActive({ textAlign: 'left' }), 'Left', MdFormatAlignLeft, 'Left')}
+                            {ribbonIconButton(() => editor.chain().focus().setTextAlign('center').run(), editor.isActive({ textAlign: 'center' }), 'Center', MdFormatAlignCenter, 'Center')}
+                            {ribbonIconButton(() => editor.chain().focus().setTextAlign('right').run(), editor.isActive({ textAlign: 'right' }), 'Right', MdFormatAlignRight, 'Right')}
+                            {ribbonBtn(() => editor.chain().focus().setTextAlign('justify').run(), editor.isActive({ textAlign: 'justify' }), 'Justify', <span>Justify</span>)}
+                        </RibbonGroup>
+                    </>
+                ) : null}
+
+                {activeTab === 'insert' ? (
+                    <>
+                        <RibbonGroup title="Insert">
+                            <button
+                                type="button"
+                                className={buttonClass(false)}
+                                onClick={() => {
+                                    const href = window.prompt('Enter URL');
+                                    if (href) {
+                                        editor.chain().focus().extendMarkRange('link').setLink({ href }).run();
+                                    }
+                                }}
+                                title="Link"
+                            >
+                                <span className="inline-flex items-center gap-1.5">
+                                    <MdLink className="h-4 w-4" />
+                                    <span className="text-xs font-medium">Link</span>
+                                </span>
+                            </button>
+                            <button
+                                type="button"
+                                className={buttonClass(false)}
+                                onClick={handleInsertImageUrl}
+                                title="Picture from URL"
+                            >
+                                <span className="inline-flex items-center gap-1.5">
+                                    <MdImage className="h-4 w-4" />
+                                    <span className="text-xs font-medium">Picture</span>
+                                </span>
+                            </button>
+                            <button
+                                type="button"
+                                className={buttonClass(false)}
+                                onClick={() => imageUploadRef.current?.click()}
+                                title="Upload picture"
+                            >
+                                <span className="inline-flex items-center gap-1.5">
+                                    <MdImage className="h-4 w-4" />
+                                    <span className="text-xs font-medium">Upload</span>
+                                </span>
+                            </button>
+                            <input ref={imageUploadRef} type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+                            <button
+                                type="button"
+                                className={buttonClass(false)}
+                                onClick={() => insertTable(3, 3)}
+                                title="Insert table"
+                            >
+                                <span className="inline-flex items-center gap-1.5">
+                                    <MdTableChart className="h-4 w-4" />
+                                    <span className="text-xs font-medium">Table</span>
+                                </span>
+                            </button>
+                            <button type="button" className={buttonClass(false)} onClick={() => insertTable(2, 2)} title="Quick 2x2 table">
+                                <span className="text-xs font-medium">2x2</span>
+                            </button>
+                            <button type="button" className={buttonClass(false)} onClick={() => insertTable(3, 4)} title="Quick 3x4 table">
+                                <span className="text-xs font-medium">3x4</span>
+                            </button>
+                            <button type="button" className={buttonClass(false)} onClick={() => insertTable(4, 4)} title="Quick 4x4 table">
+                                <span className="text-xs font-medium">4x4</span>
+                            </button>
+                            <button
+                                type="button"
+                                className={buttonClass(false)}
+                                onClick={handleInsertPageBreak}
+                                title="Page break"
+                            >
+                                <span className="text-xs font-medium">Page Break</span>
+                            </button>
+                        </RibbonGroup>
+
+                        {imageIsActive ? (
+                            <RibbonGroup title="Picture Tools">
+                                <button type="button" className={buttonClass(false)} onClick={handleReplaceImageUrl} title="Replace picture URL">
+                                    <span className="text-xs font-medium">Replace</span>
+                                </button>
+                                <button type="button" className={buttonClass(false)} onClick={() => imageUploadRef.current?.click()} title="Upload replacement picture">
+                                    <span className="text-xs font-medium">Upload</span>
+                                </button>
+                                <button type="button" className={buttonClass(false)} onClick={handleDeleteImage} title="Delete picture">
+                                    <span className="text-xs font-medium">Delete</span>
+                                </button>
+                                <button type="button" className={buttonClass(false)} onClick={handleOpenCropDialog} title="Crop picture">
+                                    <span className="text-xs font-medium">Crop</span>
+                                </button>
+                                <button type="button" className={buttonClass(imageAttrs.crop === 'square')} onClick={() => setImageCrop('square')} title="Crop picture to square">
+                                    <span className="text-xs font-medium">1:1</span>
+                                </button>
+                                <button type="button" className={buttonClass(imageAttrs.crop === 'widescreen')} onClick={() => setImageCrop('widescreen')} title="Crop picture to widescreen">
+                                    <span className="text-xs font-medium">16:9</span>
+                                </button>
+                                <button type="button" className={buttonClass(imageAttrs.crop === 'portrait')} onClick={() => setImageCrop('portrait')} title="Crop picture to portrait">
+                                    <span className="text-xs font-medium">4:5</span>
+                                </button>
+                                <button type="button" className={buttonClass(!imageAttrs.crop)} onClick={clearImageCrop} title="Remove crop">
+                                    <span className="text-xs font-medium">No Crop</span>
+                                </button>
+                                <button type="button" className={buttonClass(imageAttrs.alignment === 'left' && !imageAttrs.wrap)} onClick={() => setImageAlignment('left')} title="Align picture left">
+                                    <span className="text-xs font-medium">Left</span>
+                                </button>
+                                <button type="button" className={buttonClass(imageAttrs.alignment === 'center' && !imageAttrs.wrap)} onClick={() => setImageAlignment('center')} title="Align picture center">
+                                    <span className="text-xs font-medium">Center</span>
+                                </button>
+                                <button type="button" className={buttonClass(imageAttrs.alignment === 'right' && !imageAttrs.wrap)} onClick={() => setImageAlignment('right')} title="Align picture right">
+                                    <span className="text-xs font-medium">Right</span>
+                                </button>
+                                <button type="button" className={buttonClass(imageAttrs.wrap === 'left')} onClick={() => setImageWrap('left')} title="Wrap text left of picture">
+                                    <span className="text-xs font-medium">Wrap L</span>
+                                </button>
+                                <button type="button" className={buttonClass(imageAttrs.wrap === 'right')} onClick={() => setImageWrap('right')} title="Wrap text right of picture">
+                                    <span className="text-xs font-medium">Wrap R</span>
+                                </button>
+                                <button type="button" className={buttonClass(!imageAttrs.alignment && !imageAttrs.wrap)} onClick={clearImageLayout} title="Clear picture layout">
+                                    <span className="text-xs font-medium">Reset</span>
+                                </button>
+                                <button type="button" className={buttonClass(imageAttrs.width === '240px')} onClick={() => setImageWidth('240px')} title="Small picture">
+                                    <span className="text-xs font-medium">S</span>
+                                </button>
+                                <button type="button" className={buttonClass(imageAttrs.width === '360px')} onClick={() => setImageWidth('360px')} title="Medium picture">
+                                    <span className="text-xs font-medium">M</span>
+                                </button>
+                                <button type="button" className={buttonClass(imageAttrs.width === '520px')} onClick={() => setImageWidth('520px')} title="Large picture">
+                                    <span className="text-xs font-medium">L</span>
+                                </button>
+                                <button type="button" className={buttonClass(imageAttrs.width === '100%')} onClick={() => setImageWidth('100%')} title="Full width picture">
+                                    <span className="text-xs font-medium">Full</span>
+                                </button>
+                                <button type="button" className={buttonClass(!imageAttrs.width)} onClick={clearImageWidth} title="Clear picture size">
+                                    <span className="text-xs font-medium">Auto</span>
+                                </button>
+                                <button type="button" className={buttonClass(false)} onClick={handleCustomImageWidth} title="Custom picture width">
+                                    <span className="text-xs font-medium">Custom</span>
+                                </button>
+                            </RibbonGroup>
+                        ) : null}
+
+                        <RibbonGroup title="Table Tools">
+                            <button type="button" className={buttonClass(false)} onClick={() => tableAction('addColumnBefore')} title="Add column before">
+                                <span className="text-xs font-medium">Col Before</span>
+                            </button>
+                            <button type="button" className={buttonClass(false)} onClick={() => tableAction('addColumnAfter')} title="Add column after">
+                                <span className="text-xs font-medium">Col After</span>
+                            </button>
+                            <button type="button" className={buttonClass(false)} onClick={() => tableAction('addRowBefore')} title="Add row before">
+                                <span className="text-xs font-medium">Row Before</span>
+                            </button>
+                            <button type="button" className={buttonClass(false)} onClick={() => tableAction('addRowAfter')} title="Add row after">
+                                <span className="text-xs font-medium">Row After</span>
+                            </button>
+                            <button type="button" className={buttonClass(false)} onClick={() => tableAction('deleteRow')} title="Delete row">
+                                <span className="text-xs font-medium">Del Row</span>
+                            </button>
+                            <button type="button" className={buttonClass(false)} onClick={() => tableAction('deleteColumn')} title="Delete column">
+                                <span className="text-xs font-medium">Del Col</span>
+                            </button>
+                            <button type="button" className={buttonClass(false)} onClick={() => tableAction('deleteTable')} title="Delete table">
+                                <span className="text-xs font-medium">Del Table</span>
+                            </button>
+                            <button type="button" className={buttonClass(false)} onClick={() => tableAction('mergeCells')} title="Merge cells">
+                                <span className="text-xs font-medium">Merge</span>
+                            </button>
+                            <button type="button" className={buttonClass(false)} onClick={() => tableAction('splitCell')} title="Split cell">
+                                <span className="text-xs font-medium">Split</span>
+                            </button>
+                        </RibbonGroup>
+                    </>
+                ) : null}
+
+                {activeTab === 'review' ? (
+                    <>
+                        <RibbonGroup title="Review">
+                            <div className="relative">
+                                <button
+                                    type="button"
+                                    className={buttonClass(false)}
+                                    onClick={() => setCopilotOpen((value) => !value)}
+                                    title="AI Co-Pilot"
+                                    disabled={coPilotLoading}
+                                >
+                                    <MdSummarize className="h-4 w-4" />
+                                </button>
+                                {copilotOpen ? (
+                                    <div className="absolute right-0 z-20 mt-2 w-64 rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
+                                        {aiOptions.map((option) => (
+                                            <button
+                                                key={option.key}
+                                                type="button"
+                                                className="flex w-full items-start rounded px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                                                onClick={() => {
+                                                    onCoPilotAction(option.key);
+                                                    setCopilotOpen(false);
+                                                }}
+                                            >
+                                                <span className="font-medium">{option.label}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                ) : null}
+                            </div>
+                            <div className="mt-3 flex flex-col gap-2">
+                                <textarea
+                                    className="min-h-20 w-64 rounded-xl border border-slate-200 bg-white p-2 text-sm text-slate-700"
+                                    placeholder="Write a comment note"
+                                    value={commentText}
+                                    onChange={(event) => setCommentText(event.target.value)}
+                                />
+                                <div className="flex gap-2">
+                                    <button type="button" className={buttonClass(false)} onClick={handleInsertComment} title="Insert comment note">
+                                        <span className="text-xs font-medium">Add Comment</span>
+                                    </button>
+                                    <button type="button" className={buttonClass(false)} onClick={handleFindReplace} title="Find and replace">
+                                        <span className="text-xs font-medium">Find/Replace</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </RibbonGroup>
+                    </>
+                ) : null}
+            </div>
+
+            <ImageCropDialog
+                open={cropDialogOpen}
+                src={cropSource}
+                onClose={() => {
+                    setCropDialogOpen(false);
+                    setCropSource('');
+                }}
+                onSave={handleApplyCroppedImage}
+            />
         </div>
     );
 }
@@ -515,7 +1222,7 @@ function CollaborativeEditor({ documentId }) {
             Superscript,
             Color.configure({ types: ['textStyle'] }),
             Highlight.configure({ multicolor: true }),
-            Image.configure({ inline: false, allowBase64: true }),
+            StyledImage.configure({ inline: false, allowBase64: true }),
             Table.configure({ resizable: true }),
             TableRow,
             TableHeader,
@@ -712,11 +1419,11 @@ function CollaborativeEditor({ documentId }) {
     };
 
     return (
-        <div className="max-w-4xl mx-auto mt-10 border border-gray-300 rounded-lg shadow-lg relative">
+        <div className="mx-auto mt-10 flex max-w-4xl flex-col rounded-lg border border-gray-300 shadow-lg relative max-h-[calc(100vh-5rem)] overflow-hidden">
             {errorMessage ? (
                 <div className="p-6 text-red-700">{errorMessage}</div>
             ) : editor ? (
-                <div className="p-4">
+                <div className="flex min-h-0 flex-1 flex-col p-4">
                     <MenuBar
                         editor={editor}
                         onSave={handleSave}
@@ -724,6 +1431,7 @@ function CollaborativeEditor({ documentId }) {
                         copilotOpen={copilotOpen}
                         setCopilotOpen={setCopilotOpen}
                         coPilotLoading={coPilotLoading}
+                        currentUser={currentUser}
                     />
                     {coPilotLoading ? (
                         <div className="mb-3 text-sm text-slate-600">Generating AI response…</div>
@@ -742,7 +1450,7 @@ function CollaborativeEditor({ documentId }) {
                             <div className="whitespace-pre-line text-sm">{aiResult.text}</div>
                         </div>
                     ) : null}
-                    <div className="p-5 min-h-[300px] bg-white rounded">
+                    <div className="mt-4 min-h-0 flex-1 overflow-y-auto rounded bg-white p-5">
                         <EditorContent editor={editor} />
                     </div>
                 </div>

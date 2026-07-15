@@ -1,5 +1,6 @@
 import { Inter } from 'next/font/google'
 import './globals.css'
+import 'react-image-crop/dist/ReactCrop.css'
 
 const inter = Inter({ subsets: ['latin'] })
 
