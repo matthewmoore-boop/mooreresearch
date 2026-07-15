@@ -52,7 +52,7 @@ const colors = ['#958DF1', '#F98181', '#FBBC88', '#FAF594', '#70CFF8', '#94FADB'
 const getRandomColor = () => colors[Math.floor(Math.random() * colors.length)];
 const DRAFT_STORAGE_KEY = 'mooreresearch-doc-draft';
 const FONT_OPTIONS = ['Arial', 'Calibri', 'Cambria', 'Georgia', 'Garamond', 'Times New Roman', 'Verdana'];
-const FONT_SIZE_OPTIONS = ['4', '6', '8', '10'];
+const FONT_SIZE_OPTIONS = ['4', '6', '8', '10', '12', '14', '16', '18', '20', '24', '28', '32', '36', '40', '48', '56', '64', '72'];
 
 function normalizeFontSize(sizeValue) {
     const value = (sizeValue || '').trim();
