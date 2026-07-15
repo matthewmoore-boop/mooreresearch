@@ -108,7 +108,33 @@ body {
 .ProseMirror ul,
 .ProseMirror ol {
   margin: 0 0 0.9rem 1.5rem;
-  padding-left: 0;
+  padding-left: 1.25rem;
+}
+
+.ProseMirror ul {
+  list-style: disc;
+}
+
+.ProseMirror ol {
+  list-style: decimal;
+}
+
+.ProseMirror li {
+  margin: 0.2rem 0;
+}
+
+.ProseMirror li > ul,
+.ProseMirror li > ol {
+  margin: 0.35rem 0 0.35rem 1.1rem;
+  padding-left: 1.1rem;
+}
+
+.ProseMirror ul ul {
+  list-style: circle;
+}
+
+.ProseMirror ul ul ul {
+  list-style: square;
 }
 
 .ProseMirror img {
