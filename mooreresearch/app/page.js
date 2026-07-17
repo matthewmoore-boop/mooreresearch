@@ -118,8 +118,8 @@ async function queryFirstValidColumn(table, columns, value) {
   return { data: [], error: null, usedColumn: null };
 }
 
-async function fetchAnalystsWithFallback(company) {
-  if (!company?.id) {
+async function fetchAnalystsWithFallback(companyId) {
+  if (!companyId) {
     return { rows: [], error: null, source: null };
   }
 
@@ -131,7 +131,7 @@ async function fetchAnalystsWithFallback(company) {
   }
 
   if (analystsTable) {
-    const directMatch = await queryFirstValidColumn(analystsTable, COMPANY_ID_FIELD_CANDIDATES, company.id);
+    const directMatch = await queryFirstValidColumn(analystsTable, COMPANY_ID_FIELD_CANDIDATES, companyId);
     if (directMatch.error) {
       return { rows: [], error: directMatch.error, source: `${analystsTable}.direct` };
     }
@@ -141,7 +141,7 @@ async function fetchAnalystsWithFallback(company) {
   }
 
   for (const linkTable of ANALYST_LINK_TABLE_CANDIDATES) {
-    const companyLinks = await queryFirstValidColumn(linkTable, COMPANY_ID_FIELD_CANDIDATES, company.id);
+    const companyLinks = await queryFirstValidColumn(linkTable, COMPANY_ID_FIELD_CANDIDATES, companyId);
 
     if (companyLinks.error) {
       const missingTable = isMissingTableError(companyLinks.error);
@@ -287,11 +287,10 @@ export default function LandingPage() {
     }
   };
 
-  const fetchAnalysts = async (company) => {
+  const fetchAnalysts = async (companyId) => {
     setAnalysts([]); // Start with a clean slate
     setAnalystFetchError('');
 
-    const companyId = company?.id;
     if (!companyId) {
       return;
     }
@@ -311,7 +310,7 @@ export default function LandingPage() {
       return;
     }
 
-    const fallback = await fetchAnalystsWithFallback(company);
+    const fallback = await fetchAnalystsWithFallback(companyId);
     if (fallback.error) {
       console.error('Fallback analyst lookup failed:', fallback.error);
       setAnalystFetchError(`Error fetching analysts: ${fallback.error.message}`);
@@ -348,8 +347,19 @@ export default function LandingPage() {
   const handleSelectCompany = async (company) => {
     setSelectedCompany(company);
     setSelectedAnalysts([]);
-    await fetchAnalysts(company);
   };
+
+  useEffect(() => {
+    const companyId = selectedCompany?.id;
+
+    if (!companyId) {
+      setAnalysts([]);
+      setAnalystFetchError('');
+      return;
+    }
+
+    fetchAnalysts(companyId);
+  }, [selectedCompany?.id]);
 
   const handleToggleAnalyst = (analyst) => {
     setSelectedAnalysts((prev) => {
