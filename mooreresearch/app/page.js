@@ -86,7 +86,7 @@ function uniqueById(rows) {
   const output = [];
 
   for (const row of rows || []) {
-    const id = row?.id;
+    const id = row?.analyst_id ?? row?.id;
     if (id === undefined || id === null) {
       output.push(row);
       continue;
@@ -186,13 +186,14 @@ async function fetchAnalystsWithFallback(companyId) {
 
     const linkRowsWithAnalystInfo = companyLinks.data
       .map((row) => ({
+        analyst_id: row.analyst_id ?? row.author_id ?? row.analystId ?? row.analyst ?? row.id,
+        analyst_name: row.analyst_name ?? row.author_name ?? row.full_name ?? row.name ?? row.email ?? null,
         id: row.analyst_id ?? row.author_id ?? row.analystId ?? row.analyst ?? row.id,
-        full_name: row.full_name ?? row.name ?? row.analyst_name ?? row.author_name ?? row.email ?? null,
+        full_name: row.analyst_name ?? row.author_name ?? row.full_name ?? row.name ?? row.email ?? null,
         name: row.name ?? row.analyst_name ?? row.author_name ?? row.full_name ?? null,
-        analyst_name: row.analyst_name ?? row.author_name ?? row.name ?? row.full_name ?? null,
         email: row.email ?? null,
       }))
-      .filter((row) => row.id || row.full_name || row.name || row.analyst_name || row.email);
+      .filter((row) => row.analyst_id || row.analyst_name || row.name || row.email);
 
     if (linkRowsWithAnalystInfo.length > 0) {
       return { rows: uniqueById(linkRowsWithAnalystInfo), error: null, source: `${linkTable}.direct` };
@@ -301,14 +302,28 @@ export default function LandingPage() {
     });
 
     if (error) {
-      setAnalystFetchError(`Error fetching analysts for company ${companyId}: ${error.message}`);
+      console.warn('RPC Error fetching analysts. Falling back to schema-based lookup.', error);
     }
 
-    if (data && data.lenth > 0) {
-      setanalysts(data);
-    } else {
-      setanalystfetcherror('No analysts found for the selected company.');
+    const rpcRows = normalizeRpcRows(data);
+    if (rpcRows.length > 0) {
+      setAnalysts(uniqueById(rpcRows));
+      return;
     }
+
+    const fallback = await fetchAnalystsWithFallback(companyId);
+    if (fallback.error) {
+      console.error('Fallback analyst lookup failed:', fallback.error);
+      setAnalystFetchError(`Error fetching analysts for company ${companyId}: ${fallback.error.message}`);
+      return;
+    }
+
+    if (fallback.rows.length > 0) {
+      setAnalysts(fallback.rows);
+      return;
+    }
+
+    setAnalystFetchError('No analysts found for the selected company.');
   };
 
   const handleCreateFlow = async () => {
@@ -349,9 +364,9 @@ export default function LandingPage() {
 
   const handleToggleAnalyst = (analyst) => {
     setSelectedAnalysts((prev) => {
-      const exists = prev.some((selected) => selected.id === analyst.id);
+      const exists = prev.some((selected) => selected.analyst_id === analyst.analyst_id);
       if (exists) {
-        return prev.filter((selected) => selected.id !== analyst.id);
+        return prev.filter((selected) => selected.analyst_id !== analyst.analyst_id);
       }
       return [...prev, analyst];
     });
@@ -371,7 +386,7 @@ export default function LandingPage() {
       const insertPayload = {
         template_key: templateKey,
         company_id: selectedCompany.id,
-        author_id: selectedAnalysts[0]?.id || null,
+        author_id: selectedAnalysts[0]?.analyst_id || null,
         title: `Draft for ${selectedCompany.company_name || 'Selected Company'}`,
         content_json: {
           type: 'doc',
@@ -431,8 +446,8 @@ export default function LandingPage() {
 
   const sortedAnalysts = useMemo(() => {
     return [...analysts].sort((a, b) => {
-      const labelA = getRecordLabel(a, ['full_name', 'name', 'analyst_name', 'email', 'id']).toLowerCase();
-      const labelB = getRecordLabel(b, ['full_name', 'name', 'analyst_name', 'email', 'id']).toLowerCase();
+      const labelA = getRecordLabel(a, ['analyst_name', 'name', 'email', 'analyst_id', 'id']).toLowerCase();
+      const labelB = getRecordLabel(b, ['analyst_name', 'name', 'email', 'analyst_id', 'id']).toLowerCase();
       return labelA.localeCompare(labelB);
     });
   }, [analysts]);
@@ -575,11 +590,11 @@ export default function LandingPage() {
                   <div className="mt-4 space-y-3">
                     {analysts.length > 0 ? (
                       sortedAnalysts.map((analyst) => {
-                        const label = getRecordLabel(analyst, ['full_name', 'name', 'analyst_name', 'email', 'id']);
-                        const isSelected = selectedAnalysts.some((selected) => selected.id === analyst.id);
+                        const label = getRecordLabel(analyst, ['analyst_name', 'name', 'email', 'analyst_id', 'id']);
+                        const isSelected = selectedAnalysts.some((selected) => selected.analyst_id === analyst.analyst_id);
                         return (
                           <button
-                            key={analyst.id}
+                            key={analyst.analyst_id || analyst.id}
                             type="button"
                             onClick={() => handleToggleAnalyst(analyst)}
                             className={`w-full rounded-2xl px-4 py-3 text-left text-sm font-medium transition ${isSelected ? 'border-slate-900 bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-900 hover:border-slate-300'}`}
@@ -620,7 +635,7 @@ export default function LandingPage() {
               {selectedCompany ? <p className="mt-1 text-sm text-slate-300">Company: {getRecordLabel(selectedCompany, ['company_name', 'name', 'id'])}</p> : null}
               {selectedAnalysts.length > 0 ? (
                 <p className="mt-1 text-sm text-slate-300">
-                  Analysts: {selectedAnalysts.map((analyst) => getRecordLabel(analyst, ['full_name', 'name', 'analyst_name', 'email', 'id'])).join(', ')}
+                  Analysts: {selectedAnalysts.map((analyst) => getRecordLabel(analyst, ['analyst_name', 'name', 'email', 'analyst_id', 'id'])).join(', ')}
                 </p>
               ) : null}
               {error ? <p className="mt-3 text-sm text-red-300">{error}</p> : null}
