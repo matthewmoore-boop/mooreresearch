@@ -301,28 +301,14 @@ export default function LandingPage() {
     });
 
     if (error) {
-      console.warn('RPC Error fetching analysts. Falling back to schema-based lookup.', error);
+      setAnalystFetchError(`Error fetching analysts for company ${companyId}: ${error.message}`);
     }
 
-    const rpcRows = normalizeRpcRows(data);
-    if (rpcRows.length > 0) {
-      setAnalysts(uniqueById(rpcRows));
-      return;
+    if (data && data.lenth > 0) {
+      setanalysts(data);
+    } else {
+      setanalystfetcherror('No analysts found for the selected company.');
     }
-
-    const fallback = await fetchAnalystsWithFallback(companyId);
-    if (fallback.error) {
-      console.error('Fallback analyst lookup failed:', fallback.error);
-      setAnalystFetchError(`Error fetching analysts: ${fallback.error.message}`);
-      return;
-    }
-
-    if (fallback.rows.length > 0) {
-      setAnalysts(fallback.rows);
-      return;
-    }
-
-    setAnalystFetchError('No analysts found for the selected company.');
   };
 
   const handleCreateFlow = async () => {
