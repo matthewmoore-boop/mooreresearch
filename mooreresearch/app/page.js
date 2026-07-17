@@ -24,6 +24,19 @@ const TABLE_CANDIDATES = {
   documents: ['documents', 'document', 'notes', 'research_notes'],
 };
 
+const ANALYST_LINK_TABLE_CANDIDATES = [
+  'company_analysts',
+  'company_analyst',
+  'analyst_companies',
+  'companies_analysts',
+  'company_analyst_map',
+  'company_author',
+  'company_authors',
+];
+
+const COMPANY_ID_FIELD_CANDIDATES = ['company_id', 'companyId', 'company'];
+const ANALYST_ID_FIELD_CANDIDATES = ['analyst_id', 'author_id', 'analystId', 'analyst'];
+
 function getRecordLabel(record, keys) {
   for (const key of keys) {
     if (record?.[key]) return record[key];
@@ -54,6 +67,112 @@ function normalizeRpcRows(data) {
   if (Array.isArray(data?.data)) return data.data;
   if (Array.isArray(data?.get_analysts_for_company)) return data.get_analysts_for_company;
   return [];
+}
+
+function uniqueById(rows) {
+  const seen = new Set();
+  const output = [];
+
+  for (const row of rows || []) {
+    const id = row?.id;
+    if (id === undefined || id === null) {
+      output.push(row);
+      continue;
+    }
+    if (seen.has(id)) continue;
+    seen.add(id);
+    output.push(row);
+  }
+
+  return output;
+}
+
+async function queryFirstValidColumn(table, columns, value) {
+  for (const column of columns) {
+    const { data, error } = await supabase.from(table).select('*').eq(column, value).limit(200);
+    if (error) {
+      const missingColumn =
+        error.code === 'PGRST204' ||
+        error.code === '42703' ||
+        error.message?.toLowerCase().includes('column') ||
+        error.message?.toLowerCase().includes('does not exist');
+
+      if (missingColumn) continue;
+      return { data: null, error, usedColumn: column };
+    }
+    return { data: data || [], error: null, usedColumn: column };
+  }
+
+  return { data: [], error: null, usedColumn: null };
+}
+
+async function fetchAnalystsWithFallback(company) {
+  if (!company?.id) {
+    return { rows: [], error: null, source: null };
+  }
+
+  const analystsTableResult = await fetchTableCandidates(TABLE_CANDIDATES.analysts);
+  if (analystsTableResult.error || !analystsTableResult.table) {
+    return { rows: [], error: analystsTableResult.error || new Error('No analysts table found.'), source: null };
+  }
+
+  const analystsTable = analystsTableResult.table;
+
+  const directMatch = await queryFirstValidColumn(analystsTable, COMPANY_ID_FIELD_CANDIDATES, company.id);
+  if (directMatch.error) {
+    return { rows: [], error: directMatch.error, source: `${analystsTable}.direct` };
+  }
+  if (directMatch.data.length > 0) {
+    return { rows: uniqueById(directMatch.data), error: null, source: `${analystsTable}.${directMatch.usedColumn}` };
+  }
+
+  for (const linkTable of ANALYST_LINK_TABLE_CANDIDATES) {
+    const companyLinks = await queryFirstValidColumn(linkTable, COMPANY_ID_FIELD_CANDIDATES, company.id);
+
+    if (companyLinks.error) {
+      const missingTable =
+        companyLinks.error.code === '42P01' ||
+        companyLinks.error.message?.toLowerCase().includes('relation') ||
+        companyLinks.error.message?.toLowerCase().includes('does not exist');
+      if (missingTable) continue;
+      return { rows: [], error: companyLinks.error, source: linkTable };
+    }
+
+    if (!companyLinks.data.length) {
+      continue;
+    }
+
+    const analystIds = [];
+    for (const row of companyLinks.data) {
+      for (const analystKey of ANALYST_ID_FIELD_CANDIDATES) {
+        if (row?.[analystKey] !== undefined && row?.[analystKey] !== null) {
+          analystIds.push(row[analystKey]);
+          break;
+        }
+      }
+    }
+
+    const uniqueIds = [...new Set(analystIds.filter((id) => id !== undefined && id !== null))];
+    if (!uniqueIds.length) {
+      continue;
+    }
+
+    const { data: linkedAnalysts, error: linkedError } = await supabase
+      .from(analystsTable)
+      .select('*')
+      .in('id', uniqueIds)
+      .limit(200);
+
+    if (linkedError) {
+      return { rows: [], error: linkedError, source: `${linkTable}->${analystsTable}` };
+    }
+
+    if (linkedAnalysts && linkedAnalysts.length > 0) {
+      return { rows: uniqueById(linkedAnalysts), error: null, source: `${linkTable}.join` };
+    }
+  }
+
+  return { rows: [], error: null, source: null };
 }
 
 export default function LandingPage() {
@@ -141,33 +260,43 @@ export default function LandingPage() {
     }
   };
 
-  const fetchAnalysts = async (companyId) => {
+  const fetchAnalysts = async (company) => {
     setAnalysts([]); // Start with a clean slate
     setAnalystFetchError('');
 
+    const companyId = company?.id;
     if (!companyId) {
       return;
     }
 
-    // Directly call the database function we created. This is the only logic we need.
+    // Try RPC first for the canonical path.
     const { data, error } = await supabase.rpc('get_analysts_for_company', {
       p_company_id: companyId
     });
 
     if (error) {
-      // If the RPC call itself fails, show a specific error.
-      console.error('RPC Error fetching analysts:', error);
-      setAnalystFetchError(`Error fetching analysts: ${error.message}`);
+      console.warn('RPC Error fetching analysts. Falling back to schema-based lookup.', error);
+    }
+
+    const rpcRows = normalizeRpcRows(data);
+    if (rpcRows.length > 0) {
+      setAnalysts(uniqueById(rpcRows));
       return;
     }
 
-    if (data && data.length > 0) {
-      // Success! We found analysts.
-      setAnalysts(data);
-    } else {
-      // The RPC call succeeded but returned no rows.
-      setAnalystFetchError('No analysts found for the selected company.');
+    const fallback = await fetchAnalystsWithFallback(company);
+    if (fallback.error) {
+      console.error('Fallback analyst lookup failed:', fallback.error);
+      setAnalystFetchError(`Error fetching analysts: ${fallback.error.message}`);
+      return;
     }
+
+    if (fallback.rows.length > 0) {
+      setAnalysts(fallback.rows);
+      return;
+    }
+
+    setAnalystFetchError('No analysts found for the selected company.');
   };
 
   const handleCreateFlow = async () => {
@@ -192,7 +321,7 @@ export default function LandingPage() {
   const handleSelectCompany = async (company) => {
     setSelectedCompany(company);
     setSelectedAnalysts([]);
-    await fetchAnalysts(company.id);
+    await fetchAnalysts(company);
   };
 
   const handleToggleAnalyst = (analyst) => {

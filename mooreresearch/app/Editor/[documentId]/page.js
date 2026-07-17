@@ -23,7 +23,8 @@ import CollaborationCursor from '@tiptap/extension-collaboration-cursor';
 import ReactCrop from 'react-image-crop';
 import { createPortal } from 'react-dom';
 import * as Y from 'yjs';
-import { WebsocketProvider } from 'y-websocket';
+import { createClient as createLiveblocksClient } from '@liveblocks/client';
+import { LiveblocksYjsProvider } from '@liveblocks/yjs';
 import { createClient } from '@supabase/supabase-js';
 import {
     MdFormatBold,
@@ -69,7 +70,9 @@ const THEME_TEXT_PALETTE = [
     { label: 'Red', colors: ['#B91C1C', '#DC2626', '#EF4444', '#F87171', '#FCA5A5'] },
     { label: 'Purple', colors: ['#6D28D9', '#7C3AED', '#8B5CF6', '#A78BFA', '#C4B5FD'] },
 ];
-const COLLABORATION_SERVER_URL = process.env.NEXT_PUBLIC_YJS_WEBSOCKET_URL || '';
+const liveblocksClient = createLiveblocksClient({
+    authEndpoint: '/api/liveblocks-auth',
+});
 
 function normalizeFontFamily(fontFamily) {
     if (!fontFamily) {
@@ -111,6 +114,7 @@ function toSizeInputValue(fontSize) {
     const match = String(fontSize).trim().match(/^(\d+(?:\.\d+)?)(px|pt|em|rem|%)?$/i);
     return match ? match[1] : String(fontSize);
 }
+
 //const DOCUMENT_ID_TO_LOAD = 'c63d1b04-aadf-4251-871a-bc5a7da82fe8';
 
 function drawCroppedImage(image, canvas, crop) {
@@ -1523,6 +1527,7 @@ function CollaborativeEditor({ documentId }) {
     const [provider, setProvider] = useState(null);
     const [loading, setLoading] = useState(true);
     const [errorMessage, setErrorMessage] = useState('');
+    const [collabStatus, setCollabStatus] = useState('connecting');
     const [currentUser] = useState({
         name: 'User ' + Math.floor(Math.random() * 100),
         color: getRandomColor(),
@@ -1616,17 +1621,12 @@ function CollaborativeEditor({ documentId }) {
 
             setDocId(data.id);
 
-            if (COLLABORATION_SERVER_URL) {
-                providerInstance = new WebsocketProvider(
-                    COLLABORATION_SERVER_URL,
-                    `mooreresearch-collab-room-${data.id}`,
-                    ydoc
-                );
-                setProvider(providerInstance);
-            } else {
-                setProvider(null);
-                console.info('Collaboration websocket disabled because NEXT_PUBLIC_YJS_WEBSOCKET_URL is not configured.');
-            }
+            const room = liveblocksClient.enterRoom(`mooreresearch-collab-room-${data.id}`);
+            providerInstance = new LiveblocksYjsProvider(room, ydoc);
+            providerInstance.on('status', ({ status }) => {
+                setCollabStatus(status === 'connected' ? 'connected' : 'connecting');
+            });
+            setProvider(providerInstance);
 
             if (editor) {
                 const dbContent = parseContentJson(data.content_json) || '<p>Start typing...</p>';
@@ -1643,9 +1643,10 @@ function CollaborativeEditor({ documentId }) {
         initialize();
 
         return () => {
+            setCollabStatus('connecting');
             providerInstance?.destroy();
         };
-    }, [editor, ydoc]);
+    }, [editor, ydoc, documentId]);
 
     useEffect(() => {
         return () => {
@@ -1753,6 +1754,11 @@ function CollaborativeEditor({ documentId }) {
                 <div className="p-6 text-red-700">{errorMessage}</div>
             ) : editor ? (
                 <div className="flex min-h-0 flex-1 flex-col p-3.5 sm:p-4">
+                    <div className={`mb-3 rounded-xl border px-3 py-2 text-sm ${collabStatus === 'connected' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-slate-50 text-slate-700'}`}>
+                        {collabStatus === 'connected'
+                            ? 'Collaboration connected via Liveblocks.'
+                            : 'Connecting collaboration session...'}
+                        </div>
                     <MenuBar
                         editor={editor}
                         onSave={handleSave}

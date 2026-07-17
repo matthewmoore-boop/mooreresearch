@@ -16,6 +16,7 @@
     "@liveblocks/react": "^2.1.0",
     "@liveblocks/react-lexical": "^2.1.0",
     "@liveblocks/react-ui": "^2.1.0",
+    "@liveblocks/yjs": "^3.22.0",
     "@tiptap/extension-collaboration": "^3.27.1",
     "@tiptap/extension-collaboration-cursor": "^3.0.0",
     "@tiptap/extension-color": "^3.27.1",
