@@ -37,6 +37,18 @@ const ANALYST_LINK_TABLE_CANDIDATES = [
 const COMPANY_ID_FIELD_CANDIDATES = ['company_id', 'companyId', 'company'];
 const ANALYST_ID_FIELD_CANDIDATES = ['analyst_id', 'author_id', 'analystId', 'analyst'];
 
+function isMissingTableError(error) {
+  const message = String(error?.message || '').toLowerCase();
+  return (
+    error?.code === '42P01' ||
+    error?.code === 'PGRST205' ||
+    message.includes('relation') ||
+    message.includes('does not exist') ||
+    message.includes('could not find the table') ||
+    message.includes('schema cache')
+  );
+}
+
 function getRecordLabel(record, keys) {
   for (const key of keys) {
     if (record?.[key]) return record[key];
@@ -48,7 +60,7 @@ async function fetchTableCandidates(tableKeys, select = '*') {
   for (const table of tableKeys) {
     const { data, error } = await supabase.from(table).select(select).limit(50);
     if (error) {
-      if (error.code === '42P01' || error.message?.includes('relation') || error.message?.includes('does not exist')) {
+      if (isMissingTableError(error)) {
         continue;
       }
       return { table, data: null, error };
@@ -112,28 +124,27 @@ async function fetchAnalystsWithFallback(company) {
   }
 
   const analystsTableResult = await fetchTableCandidates(TABLE_CANDIDATES.analysts);
-  if (analystsTableResult.error || !analystsTableResult.table) {
-    return { rows: [], error: analystsTableResult.error || new Error('No analysts table found.'), source: null };
+  const analystsTable = analystsTableResult.table || null;
+
+  if (analystsTableResult.error && !isMissingTableError(analystsTableResult.error)) {
+    return { rows: [], error: analystsTableResult.error, source: null };
   }
 
-  const analystsTable = analystsTableResult.table;
-
-  const directMatch = await queryFirstValidColumn(analystsTable, COMPANY_ID_FIELD_CANDIDATES, company.id);
-  if (directMatch.error) {
-    return { rows: [], error: directMatch.error, source: `${analystsTable}.direct` };
-  }
-  if (directMatch.data.length > 0) {
-    return { rows: uniqueById(directMatch.data), error: null, source: `${analystsTable}.${directMatch.usedColumn}` };
+  if (analystsTable) {
+    const directMatch = await queryFirstValidColumn(analystsTable, COMPANY_ID_FIELD_CANDIDATES, company.id);
+    if (directMatch.error) {
+      return { rows: [], error: directMatch.error, source: `${analystsTable}.direct` };
+    }
+    if (directMatch.data.length > 0) {
+      return { rows: uniqueById(directMatch.data), error: null, source: `${analystsTable}.${directMatch.usedColumn}` };
+    }
   }
 
   for (const linkTable of ANALYST_LINK_TABLE_CANDIDATES) {
     const companyLinks = await queryFirstValidColumn(linkTable, COMPANY_ID_FIELD_CANDIDATES, company.id);
 
     if (companyLinks.error) {
-      const missingTable =
-        companyLinks.error.code === '42P01' ||
-        companyLinks.error.message?.toLowerCase().includes('relation') ||
-        companyLinks.error.message?.toLowerCase().includes('does not exist');
+      const missingTable = isMissingTableError(companyLinks.error);
       if (missingTable) continue;
       return { rows: [], error: companyLinks.error, source: linkTable };
     }
@@ -157,18 +168,34 @@ async function fetchAnalystsWithFallback(company) {
       continue;
     }
 
-    const { data: linkedAnalysts, error: linkedError } = await supabase
-      .from(analystsTable)
-      .select('*')
-      .in('id', uniqueIds)
-      .limit(200);
+    if (analystsTable) {
+      const { data: linkedAnalysts, error: linkedError } = await supabase
+        .from(analystsTable)
+        .select('*')
+        .in('id', uniqueIds)
+        .limit(200);
 
-    if (linkedError) {
-      return { rows: [], error: linkedError, source: `${linkTable}->${analystsTable}` };
+      if (linkedError) {
+        if (!isMissingTableError(linkedError)) {
+          return { rows: [], error: linkedError, source: `${linkTable}->${analystsTable}` };
+        }
+      } else if (linkedAnalysts && linkedAnalysts.length > 0) {
+        return { rows: uniqueById(linkedAnalysts), error: null, source: `${linkTable}.join` };
+      }
     }
 
-    if (linkedAnalysts && linkedAnalysts.length > 0) {
-      return { rows: uniqueById(linkedAnalysts), error: null, source: `${linkTable}.join` };
+    const linkRowsWithAnalystInfo = companyLinks.data
+      .map((row) => ({
+        id: row.analyst_id ?? row.author_id ?? row.analystId ?? row.analyst ?? row.id,
+        full_name: row.full_name ?? row.name ?? row.analyst_name ?? row.author_name ?? row.email ?? null,
+        name: row.name ?? row.analyst_name ?? row.author_name ?? row.full_name ?? null,
+        analyst_name: row.analyst_name ?? row.author_name ?? row.name ?? row.full_name ?? null,
+        email: row.email ?? null,
+      }))
+      .filter((row) => row.id || row.full_name || row.name || row.analyst_name || row.email);
+
+    if (linkRowsWithAnalystInfo.length > 0) {
+      return { rows: uniqueById(linkRowsWithAnalystInfo), error: null, source: `${linkTable}.direct` };
     }
   }
 
